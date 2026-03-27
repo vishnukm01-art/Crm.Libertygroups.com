@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+// Voice Jar custom domain — clean URLs without /voice-jar prefix
+const VOICE_JAR_HOSTS = ["qc.swagan.com"];
+
 // Routes that don't require authentication
 // Paths that are public via prefix match (anything starting with these)
 const PUBLIC_PREFIXES = [
@@ -42,7 +45,22 @@ function getAllowedRoles(pathname: string): string[] | null {
 }
 
 export async function middleware(request: NextRequest) {
+  const hostname = request.headers.get("host") || "";
+  const isVoiceJarDomain = VOICE_JAR_HOSTS.some((h) => hostname.startsWith(h));
   const { pathname } = request.nextUrl;
+
+  // ── Voice Jar custom domain: rewrite clean URLs to /voice-jar/* ──
+  if (isVoiceJarDomain && !pathname.startsWith("/voice-jar") && !pathname.startsWith("/api/") && !pathname.startsWith("/_next")) {
+    // /login → /voice-jar/login
+    // / → /voice-jar (dashboard)
+    // /lists → /voice-jar/lists
+    // /abc123 → /voice-jar/abc123
+    const target = pathname === "/" ? "/voice-jar" : `/voice-jar${pathname}`;
+    const rewriteUrl = new URL(target, request.url);
+    rewriteUrl.search = request.nextUrl.search;
+    // Use rewrite so the user sees the clean URL
+    return NextResponse.rewrite(rewriteUrl);
+  }
 
   // Skip public paths
   if (isPublicPath(pathname)) {
@@ -66,8 +84,14 @@ export async function middleware(request: NextRequest) {
     }
     // Page routes redirect to login
     // Voice Jar routes go to Voice Jar login, others go to CRM login
-    const loginPath = pathname.startsWith("/voice-jar") ? "/voice-jar/login" : "/";
-    const loginUrl = new URL(loginPath, request.url);
+    if (pathname.startsWith("/voice-jar")) {
+      const loginUrl = isVoiceJarDomain
+        ? new URL("/login", request.url)
+        : new URL("/voice-jar/login", request.url);
+      loginUrl.searchParams.set("callbackUrl", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+    const loginUrl = new URL("/", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
