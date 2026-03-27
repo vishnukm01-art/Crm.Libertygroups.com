@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+uploads
+mt5-bridge
+.env
+.env.local
+*.md
