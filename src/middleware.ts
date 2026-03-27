@@ -9,6 +9,7 @@ const PUBLIC_PREFIXES = [
   "/api/mt5/status",
   "/api/uploads",
   "/register",
+  "/voice-jar/login",
 ];
 
 // Paths that are public via exact match only
@@ -64,7 +65,9 @@ export async function middleware(request: NextRequest) {
       );
     }
     // Page routes redirect to login
-    const loginUrl = new URL("/", request.url);
+    // Voice Jar routes go to Voice Jar login, others go to CRM login
+    const loginPath = pathname.startsWith("/voice-jar") ? "/voice-jar/login" : "/";
+    const loginUrl = new URL(loginPath, request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
