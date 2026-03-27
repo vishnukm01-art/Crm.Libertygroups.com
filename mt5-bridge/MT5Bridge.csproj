@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference the MT5 Manager API .NET wrapper from MetaQuotes SDK -->
+    <!-- Copy from C:\MetaTrader5SDK\Libs\ on the MT5 server into libs/ -->
+    <Reference Include="MetaQuotes.MT5ManagerAPI64">
+      <HintPath>libs\MetaQuotes.MT5ManagerAPI64.dll</HintPath>
+    </Reference>
+    <Reference Include="MetaQuotes.MT5CommonAPI64">
+      <HintPath>libs\MetaQuotes.MT5CommonAPI64.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copy native DLLs to output -->
+    <None Update="libs\MT5APIManager64.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="libs\MT5APIGateway64.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+  </ItemGroup>
+
+</Project>

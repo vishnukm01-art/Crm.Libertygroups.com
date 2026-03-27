@@ -1,0 +1,22 @@
+BLOCKED TASK: Update Sayyed MT5 Account
+=====================================
+
+Task: Update Sayyed (ruknucarki@necub.com) MT5 account from mock 70002 to real number
+Status: BLOCKED - Needs User Input
+Reason: MT5 live server IP whitelist blocking all Vercel connections (403 Forbidden)
+
+Current State:
+- User: Sayyed (ruknucarki@necub.com)
+- Current MT5 Account in DB: 70002 (mock sequential number)
+- Real MT5 Account: UNKNOWN - needs to be provided by user
+
+Required Action:
+User must provide Sayyed's real MT5 account number from MT5 Administrator:
+1. Open MT5 Administrator
+2. Go to Clients & Accounts → Trading Accounts
+3. Search for "Sayyed" or email "ruknucarki@necub.com"
+4. Find the real MT5 login number (9009094xxxxx format, not 70002)
+5. Provide the real account number
+
+Once provided, update the database:
+UPDATE "User" SET "mt5Account" = 'REAL_NUMBER' WHERE email = 'ruknucarki@necub.com';
