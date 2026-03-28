@@ -162,13 +162,17 @@ function VoiceJarShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-gray-100 dark:border-gray-800 p-3">
+        <div className="border-t border-gray-100 dark:border-gray-800 p-3 space-y-1">
           <button
-            onClick={() => router.push("/")}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            onClick={async () => {
+              await fetch("/api/auth/signout", { method: "POST" });
+              document.cookie = "authjs.session-token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT";
+              router.push("/voice-jar/login");
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors"
           >
             <LogOut className="h-4 w-4" />
-            Back to CRM
+            Logout
           </button>
         </div>
       </aside>
