@@ -44,10 +44,25 @@ async function processAudioJob(job: Job<AudioProcessingJobData>): Promise<void> 
       segments = result.segments;
     } else {
       // Remote URL - download first
+      console.log(`[audio-worker] Downloading audio from: ${audioUrl}`);
       const res = await fetch(audioUrl);
+      if (!res.ok) {
+        throw new Error(`Failed to download audio: HTTP ${res.status} ${res.statusText}`);
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.startsWith("audio/") && contentType !== "application/octet-stream") {
+        throw new Error(`Unexpected content-type from audio URL: ${contentType} (expected audio/*)`);
+      }
       const buffer = Buffer.from(await res.arrayBuffer());
-      const tmpPath = `/tmp/audio-${interactionId}.mp3`;
+      if (buffer.length < 1000) {
+        throw new Error(`Downloaded file too small (${buffer.length} bytes) - likely not a valid audio file`);
+      }
+      // Preserve original extension from URL
+      const urlPath = new URL(audioUrl).pathname;
+      const ext = path.extname(urlPath) || ".mp3";
+      const tmpPath = `/tmp/audio-${interactionId}${ext}`;
       fs.writeFileSync(tmpPath, buffer);
+      console.log(`[audio-worker] Downloaded ${buffer.length} bytes to ${tmpPath}`);
       const fileStream = fs.createReadStream(tmpPath);
       const result = await transcribeAudioWithTimestamps(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
