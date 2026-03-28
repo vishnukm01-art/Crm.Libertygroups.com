@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
         const filePath = path.join(uploadsDir, fileName);
         fs.writeFileSync(filePath, buffer);
 
-        audioUrl = `/api/uploads/${fileName}`;
+        audioUrl = `/api/files/${fileName}`;
         audioFileName = file.name;
       }
     } else {
@@ -94,10 +94,10 @@ export async function POST(req: NextRequest) {
       const queue = getAudioQueue();
       // For production: pass the full public URL so the worker (separate container) can download the file
       const appUrl = process.env.APP_URL || "";
-      const workerAudioUrl = audioUrl.startsWith("/api/uploads/") && appUrl
+      const workerAudioUrl = audioUrl.startsWith("/api/files/") && appUrl
         ? `${appUrl}${audioUrl}`
-        : audioUrl.startsWith("/api/uploads/")
-          ? path.join(process.cwd(), "uploads", audioUrl.replace("/api/uploads/", ""))
+        : audioUrl.startsWith("/api/files/")
+          ? path.join(process.cwd(), "uploads", audioUrl.replace("/api/files/", ""))
           : audioUrl;
 
       await queue.add("process-audio", {

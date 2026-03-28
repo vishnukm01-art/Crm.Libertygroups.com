@@ -25,7 +25,7 @@ const PUBLIC_PREFIXES = [
   "/api/auth",
   "/api/mt5/health",
   "/api/mt5/status",
-  "/api/uploads",
+  "/api/files",
   "/register",
   "/voice-jar/login",
 ];

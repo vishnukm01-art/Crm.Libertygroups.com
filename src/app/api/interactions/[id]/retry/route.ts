@@ -34,10 +34,10 @@ export async function POST(
   const appUrl = process.env.APP_URL || "";
   const audioUrl = interaction.audioUrl;
   const workerAudioUrl =
-    audioUrl.startsWith("/api/uploads/") && appUrl
+    audioUrl.startsWith("/api/files/") && appUrl
       ? `${appUrl}${audioUrl}`
-      : audioUrl.startsWith("/api/uploads/")
-        ? path.join(process.cwd(), "uploads", audioUrl.replace("/api/uploads/", ""))
+      : audioUrl.startsWith("/api/files/")
+        ? path.join(process.cwd(), "uploads", audioUrl.replace("/api/files/", ""))
         : audioUrl;
 
   const queue = getAudioQueue();
