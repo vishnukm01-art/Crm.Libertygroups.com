@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
         const uploadsDir = path.join(process.cwd(), "uploads");
         if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-        const fileName = `${Date.now()}-${file.name}`;
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const fileName = `${Date.now()}-${safeName}`;
         const filePath = path.join(uploadsDir, fileName);
         fs.writeFileSync(filePath, buffer);
 

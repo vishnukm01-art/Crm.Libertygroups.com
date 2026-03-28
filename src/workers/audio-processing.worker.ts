@@ -44,8 +44,9 @@ async function processAudioJob(job: Job<AudioProcessingJobData>): Promise<void> 
       segments = result.segments;
     } else {
       // Remote URL - download first
-      console.log(`[audio-worker] Downloading audio from: ${audioUrl}`);
-      const res = await fetch(audioUrl);
+      const encodedUrl = encodeURI(audioUrl);
+      console.log(`[audio-worker] Downloading audio from: ${encodedUrl}`);
+      const res = await fetch(encodedUrl);
       if (!res.ok) {
         throw new Error(`Failed to download audio: HTTP ${res.status} ${res.statusText}`);
       }
@@ -58,8 +59,7 @@ async function processAudioJob(job: Job<AudioProcessingJobData>): Promise<void> 
         throw new Error(`Downloaded file too small (${buffer.length} bytes) - likely not a valid audio file`);
       }
       // Preserve original extension from URL
-      const urlPath = new URL(audioUrl).pathname;
-      const ext = path.extname(urlPath) || ".mp3";
+      const ext = path.extname(audioUrl).split("?")[0] || ".mp3";
       const tmpPath = `/tmp/audio-${interactionId}${ext}`;
       fs.writeFileSync(tmpPath, buffer);
       console.log(`[audio-worker] Downloaded ${buffer.length} bytes to ${tmpPath}`);
