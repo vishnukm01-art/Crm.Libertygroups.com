@@ -91,11 +91,17 @@ export async function POST(req: NextRequest) {
     // Queue audio processing if we have an audio URL
     if (audioUrl) {
       const queue = getAudioQueue();
+      // For production: pass the full public URL so the worker (separate container) can download the file
+      const appUrl = process.env.APP_URL || "";
+      const workerAudioUrl = audioUrl.startsWith("/api/uploads/") && appUrl
+        ? `${appUrl}${audioUrl}`
+        : audioUrl.startsWith("/api/uploads/")
+          ? path.join(process.cwd(), "uploads", audioUrl.replace("/api/uploads/", ""))
+          : audioUrl;
+
       await queue.add("process-audio", {
         interactionId: interaction.id,
-        audioUrl: audioUrl.startsWith("/api/uploads/")
-          ? path.join(process.cwd(), "uploads", audioUrl.replace("/api/uploads/", ""))
-          : audioUrl,
+        audioUrl: workerAudioUrl,
       });
     }
 
