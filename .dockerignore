@@ -1,7 +1,8 @@
 node_modules
 .next
 .git
-/uploads
+uploads
+!src/app/api/uploads
 mt5-bridge
 .env
 .env.local
