@@ -19,11 +19,12 @@ import {
   LogOut,
 } from "lucide-react";
 import { useState } from "react";
+import { VJAuthProvider, useVJAuth } from "./VJAuthContext";
 
 const navItems = [
   { name: "Home", href: "/voice-jar", icon: Home },
   { name: "Interactions", href: "/voice-jar", icon: Headphones, exact: true },
-  { name: "Lists", href: "/voice-jar/lists", icon: List },
+  { name: "Lists", href: "/voice-jar/lists", icon: List, adminOnly: true },
 ];
 
 const evalItems = [
@@ -38,14 +39,26 @@ const bottomItems = [
 ];
 
 export default function VoiceJarLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <VJAuthProvider>
+      <VoiceJarShell>{children}</VoiceJarShell>
+    </VJAuthProvider>
+  );
+}
+
+function VoiceJarShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [evalOpen, setEvalOpen] = useState(true);
+  const { user, isAdmin } = useVJAuth();
 
   const isActive = (href: string, exact?: boolean) => {
     if (exact) return pathname === href;
     return pathname === href || pathname.startsWith(href + "/");
   };
+
+  const displayName = user?.name || "User";
+  const displayInitial = displayName.charAt(0).toUpperCase();
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex">
@@ -65,6 +78,7 @@ export default function VoiceJarLayout({ children }: { children: React.ReactNode
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
           {navItems.map((item) => {
+            if (item.adminOnly && !isAdmin) return null;
             const active = isActive(item.href, item.exact);
             return (
               <button
@@ -118,10 +132,12 @@ export default function VoiceJarLayout({ children }: { children: React.ReactNode
             <FileText className="h-4 w-4 text-gray-400" />
             Templates
           </button>
-          <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800 rounded-lg transition-colors">
-            <Trash2 className="h-4 w-4 text-gray-400" />
-            Trash
-          </button>
+          {isAdmin && (
+            <button className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-800 rounded-lg transition-colors">
+              <Trash2 className="h-4 w-4 text-gray-400" />
+              Trash
+            </button>
+          )}
 
           {/* Start Evaluation CTA */}
           <div className="pt-3 px-1">
@@ -164,9 +180,9 @@ export default function VoiceJarLayout({ children }: { children: React.ReactNode
           <div />
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-full bg-violet-100 dark:bg-violet-900/40 flex items-center justify-center text-xs font-bold text-violet-600">
-              A
+              {displayInitial}
             </div>
-            <span className="text-sm text-gray-700 dark:text-gray-300">Admin</span>
+            <span className="text-sm text-gray-700 dark:text-gray-300">{displayName}</span>
           </div>
         </header>
 

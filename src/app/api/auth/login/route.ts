@@ -22,6 +22,14 @@ export async function POST(req: NextRequest) {
     else if (normalizedEmail === "ib@libertygroups.com" && password === process.env.IB_PASSWORD) {
       user = { id: "ib", email: "ib@libertygroups.com", name: "IB Manager", role: "ib" };
     }
+    // Voice Jar Admin
+    else if (normalizedEmail === "admin@qc.swagan.com" && password === process.env.VJ_ADMIN_PASSWORD) {
+      user = { id: "vj-admin", email: "admin@qc.swagan.com", name: "VJ Admin", role: "admin" };
+    }
+    // Voice Jar Reviewer (IP-restricted in middleware)
+    else if (normalizedEmail === "reviewer@qc.swagan.com" && password === process.env.VJ_REVIEWER_PASSWORD) {
+      user = { id: "vj-reviewer", email: "reviewer@qc.swagan.com", name: "Reviewer", role: "vj_reviewer" };
+    }
     // Check database
     else {
       try {

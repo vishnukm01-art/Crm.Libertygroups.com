@@ -4,6 +4,21 @@ import { getToken } from "next-auth/jwt";
 // Voice Jar custom domain — clean URLs without /voice-jar prefix
 const VOICE_JAR_HOSTS = ["qc.swagan.com"];
 
+// Whitelisted IPs for reviewer role (comma-separated in env var, e.g. "1.2.3.4,5.6.7.8")
+// Set VJ_REVIEWER_IPS env var on Railway when ready
+function getReviewerIPs(): string[] {
+  const ips = process.env.VJ_REVIEWER_IPS || "";
+  return ips.split(",").map((ip) => ip.trim()).filter(Boolean);
+}
+
+function getClientIP(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
 // Routes that don't require authentication
 // Paths that are public via prefix match (anything starting with these)
 const PUBLIC_PREFIXES = [
@@ -22,7 +37,8 @@ const PUBLIC_EXACT = ["/"];
 const ROLE_RULES: { prefix: string; roles: string[] }[] = [
   { prefix: "/api/admin", roles: ["admin", "sub_admin"] },
   { prefix: "/admin", roles: ["admin", "sub_admin"] },
-  { prefix: "/voice-jar", roles: ["admin", "sub_admin"] },
+  { prefix: "/voice-jar", roles: ["admin", "sub_admin", "vj_reviewer"] },
+  { prefix: "/api/interactions", roles: ["admin", "sub_admin", "vj_reviewer"] },
   { prefix: "/api/portal", roles: ["client", "ib", "admin"] },
   { prefix: "/portal", roles: ["client", "ib", "admin"] },
   { prefix: "/api/ib", roles: ["admin", "sub_admin", "ib"] },
@@ -112,6 +128,26 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL("/portal/deposit", request.url));
     }
     return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  // IP restriction for vj_reviewer role
+  if (userRole === "vj_reviewer") {
+    const allowedIPs = getReviewerIPs();
+    if (allowedIPs.length > 0) {
+      const clientIP = getClientIP(request);
+      if (!allowedIPs.includes(clientIP)) {
+        if (pathname.startsWith("/api/")) {
+          return NextResponse.json(
+            { error: "Access denied: IP not authorized" },
+            { status: 403 }
+          );
+        }
+        return NextResponse.json(
+          { error: "Access denied: Your IP address is not authorized to access this application." },
+          { status: 403 }
+        );
+      }
+    }
   }
 
   // Inject auth headers for downstream API routes

@@ -13,7 +13,21 @@ Write-Host "===========================" -ForegroundColor Cyan
 Write-Host "`n[1/5] Stopping service..." -ForegroundColor Yellow
 sc.exe stop MT5Bridge 2>&1 | Out-Null
 Stop-Process -Name MT5Bridge -Force -ErrorAction SilentlyContinue
+# Also kill any process using port 6680
+$portPid = (Get-NetTCPConnection -LocalPort 6680 -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique
+if ($portPid) {
+    foreach ($pid in $portPid) {
+        Write-Host "  Killing process $pid on port 6680" -ForegroundColor Gray
+        Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+    }
+}
 Start-Sleep -Seconds 5
+# Verify port is free
+$stillUsed = Get-NetTCPConnection -LocalPort 6680 -ErrorAction SilentlyContinue
+if ($stillUsed) {
+    Write-Host "  WARNING: Port 6680 still in use. Waiting 10 more seconds..." -ForegroundColor Red
+    Start-Sleep -Seconds 10
+}
 
 # Create source directory structure
 Write-Host "[2/5] Writing source files..." -ForegroundColor Yellow
@@ -733,7 +747,7 @@ public class MT5Service : IMT5Service, IDisposable
         Connected = _connected, Mode = "bridge",
         LastError = string.IsNullOrEmpty(_lastError) ? null : _lastError,
         LastConnected = _lastConnected, LastKeepalive = _lastKeepalive,
-        TotalRequests = _totalRequests, ServerBuild = "5660",
+        TotalRequests = _totalRequests, ServerBuild = "v3-userfix",
         Uptime = DateTime.UtcNow - _startTime
     };
 
@@ -757,13 +771,84 @@ public class MT5Service : IMT5Service, IDisposable
 
         var groupMethods = allMethods.Where(m => m.name.Contains("Group", StringComparison.OrdinalIgnoreCase)).ToList();
 
+        // Also inspect CIMTUser record
+        object? userRecordInfo = null;
+        try
+        {
+            var rec = CreateRecord("User");
+            if (rec != null)
+            {
+                var recType = rec.GetType();
+                var userMethods = recType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(m => !m.IsSpecialName && m.DeclaringType != typeof(object))
+                    .Select(m => new
+                    {
+                        name = m.Name,
+                        parameters = string.Join(", ", m.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}")),
+                        returnType = m.ReturnType.Name
+                    })
+                    .OrderBy(m => m.name)
+                    .ToList();
+
+                // Try set then read Name
+                var setReadTest = "not attempted";
+                try
+                {
+                    SetProperty(rec, "Name", "DebugTestUser");
+                    var nameBack = GetProperty<string>(rec, "Name");
+                    setReadTest = $"set=DebugTestUser, read={nameBack}";
+                }
+                catch (Exception ex) { setReadTest = $"ERROR: {ex.Message}"; }
+
+                // Try reading Login
+                var loginTest = "not attempted";
+                try
+                {
+                    var loginVal = GetProperty<ulong>(rec, "Login");
+                    loginTest = $"GetProperty<ulong>={loginVal}";
+
+                    // Also try direct method invocation
+                    var loginGetter = recType.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                        .FirstOrDefault(m => m.Name.Equals("Login", StringComparison.OrdinalIgnoreCase) && m.GetParameters().Length == 0 && m.ReturnType != typeof(void));
+                    if (loginGetter != null)
+                    {
+                        var directVal = loginGetter.Invoke(rec, null);
+                        loginTest += $", directMethod={directVal}({directVal?.GetType().Name})";
+                    }
+                    else
+                    {
+                        loginTest += ", NO Login() getter found";
+                    }
+                }
+                catch (Exception ex) { loginTest += $", ERROR: {ex.Message}"; }
+
+                userRecordInfo = new
+                {
+                    type = recType.FullName,
+                    totalMethods = userMethods.Count,
+                    methods = userMethods,
+                    setReadTest,
+                    loginTest
+                };
+            }
+            else
+            {
+                userRecordInfo = new { error = "CreateRecord(User) returned null" };
+            }
+        }
+        catch (Exception ex)
+        {
+            userRecordInfo = new { error = ex.InnerException?.Message ?? ex.Message };
+        }
+
         return new
         {
             connected = _connected,
             managerType = _managerApi.GetType().FullName,
             totalMethods = allMethods.Count,
             groupMethods,
-            allMethodNames = allMethods.Select(m => m.name).Distinct().ToList()
+            allMethodNames = allMethods.Select(m => m.name).Distinct().ToList(),
+            userRecord = userRecordInfo
         };
     }
 
@@ -879,7 +964,7 @@ public class MT5Service : IMT5Service, IDisposable
             _logger.LogInformation("User record methods: {Methods}", string.Join(", ", userMethods));
 
             SetProperty(rec, "Name", request.Name);
-            SetProperty(rec, "Email", request.Email);
+            SetProperty(rec, "EMail", request.Email);
             SetProperty(rec, "Group", request.Group);
             SetProperty(rec, "Leverage", (uint)request.Leverage);
             SetProperty(rec, "Phone", request.Phone);
