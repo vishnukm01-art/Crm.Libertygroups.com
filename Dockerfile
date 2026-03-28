@@ -25,12 +25,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN groupadd --system --gid 1001 nodejs
-RUN useradd --system --uid 1001 nextjs
-
 # Copy standalone web server (includes server.js in root)
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
 # Overwrite minimal standalone node_modules with full modules (needed for worker)
@@ -43,14 +40,12 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/src ./src
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
-# Create uploads directory with correct permissions
-RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
+# Create uploads directory
+RUN mkdir -p /app/uploads
 
 # Entrypoint script for web/worker mode switching
-COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
-
-USER nextjs
 
 EXPOSE 3000
 
