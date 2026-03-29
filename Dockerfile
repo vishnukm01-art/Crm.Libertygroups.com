@@ -16,8 +16,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Dummy DATABASE_URL so Prisma can initialise during next build's page-data collection
+# Dummy env vars so Next.js page-data collection can import modules without crashing
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+ENV OPENAI_API_KEY="sk-dummy"
 
 RUN npx prisma generate
 RUN npm run build
