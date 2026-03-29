@@ -25,6 +25,7 @@ import AudioPlayer from "./components/AudioPlayer";
 import TranscriptTab from "./components/TranscriptTab";
 import StructuredSummary from "./components/StructuredSummary";
 import AnalysisSidebar from "./components/AnalysisSidebar";
+import ScorecardSidebar from "./components/ScorecardSidebar";
 import type { AnalysisItem } from "./components/AnalysisItemList";
 
 interface EvaluationSummary {
@@ -507,6 +508,16 @@ export default function InteractionDetailPage() {
               weaknesses={interaction.interactionWeaknesses}
               missedOpportunities={interaction.interactionMissedOpportunities}
             />
+
+            {/* Scorecard Results */}
+            {interaction.evaluations && interaction.evaluations.length > 0 && (() => {
+              const latestEval = interaction.evaluations.find(e => e.evaluationType === "ai") || interaction.evaluations[0];
+              return (
+                <div className="mt-4">
+                  <ScorecardSidebar evaluationId={latestEval.id} />
+                </div>
+              );
+            })()}
 
             {/* Interaction Meta */}
             <div className="mt-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-2">
