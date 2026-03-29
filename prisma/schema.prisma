@@ -329,6 +329,8 @@ model Interaction {
   audioFileName  String?
   autoFailed     Boolean           @default(false)
   failReason     String?
+  isSaved        Boolean           @default(false)
+  deletedAt      DateTime?
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
@@ -337,6 +339,7 @@ model Interaction {
   interactionWeaknesses          InteractionWeakness[]
   interactionMissedOpportunities InteractionMissedOpportunity[]
   listItems                      InteractionListItem[]
+  evaluations                    Evaluation[]
 }
 
 model InteractionOutcome {
@@ -401,4 +404,110 @@ model InteractionListItem {
   notes         String?         @db.Text
 
   @@unique([listId, interactionId])
+}
+
+model Agent {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  email      String?
+  department String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model ScorecardTemplate {
+  id          String              @id @default(cuid())
+  name        String
+  description String?             @db.Text
+  isActive    Boolean             @default(true)
+  isDefault   Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  criteria    ScorecardCriteria[]
+  evaluations Evaluation[]
+}
+
+model ScorecardCriteria {
+  id          String              @id @default(cuid())
+  templateId  String
+  template    ScorecardTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  name        String
+  description String?             @db.Text
+  weight      Float
+  maxScore    Int                 @default(10)
+  sortOrder   Int                 @default(0)
+  questions   ScorecardQuestion[]
+}
+
+model ScorecardQuestion {
+  id         String            @id @default(cuid())
+  criteriaId String
+  criteria   ScorecardCriteria @relation(fields: [criteriaId], references: [id], onDelete: Cascade)
+  text       String            @db.Text
+  maxPoints  Int               @default(5)
+  sortOrder  Int               @default(0)
+}
+
+model Evaluation {
+  id             String            @id @default(cuid())
+  interactionId  String
+  interaction    Interaction       @relation(fields: [interactionId], references: [id], onDelete: Cascade)
+  templateId     String
+  template       ScorecardTemplate @relation(fields: [templateId], references: [id])
+  evaluatorId    String
+  evaluatorName  String?
+  evaluationType String            @default("manual")
+  status         String            @default("draft")
+  totalScore     Float?
+  notes          String?           @db.Text
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  scores         EvaluationScore[]
+}
+
+model EvaluationScore {
+  id             String                    @id @default(cuid())
+  evaluationId   String
+  evaluation     Evaluation                @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  criteriaId     String
+  criteriaName   String
+  score          Int
+  notes          String?                   @db.Text
+  questionScores EvaluationQuestionScore[]
+}
+
+model EvaluationQuestionScore {
+  id                String          @id @default(cuid())
+  evaluationScoreId String
+  evaluationScore   EvaluationScore @relation(fields: [evaluationScoreId], references: [id], onDelete: Cascade)
+  questionId        String
+  questionText      String          @db.Text
+  score             Float
+  maxPoints         Int
+  passed            Boolean
+  notes             String?         @db.Text
+}
+
+model VJActivityLog {
+  id            String   @id @default(cuid())
+  action        String
+  userId        String?
+  userName      String?
+  interactionId String?
+  entityType    String?
+  entityId      String?
+  details       String?  @db.Text
+  createdAt     DateTime @default(now())
+}
+
+model VJAlertRule {
+  id             String   @id @default(cuid())
+  type           String
+  threshold      Int?
+  recipientEmail String
+  isActive       Boolean  @default(true)
+  createdBy      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }

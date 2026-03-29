@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   Phone,
@@ -14,6 +15,10 @@ import {
   ListPlus,
   Check,
   X,
+  Bookmark,
+  ClipboardCheck,
+  Trash2,
+  Bot,
 } from "lucide-react";
 import { AudioPlayerProvider } from "./components/AudioPlayerContext";
 import AudioPlayer from "./components/AudioPlayer";
@@ -21,6 +26,16 @@ import TranscriptTab from "./components/TranscriptTab";
 import StructuredSummary from "./components/StructuredSummary";
 import AnalysisSidebar from "./components/AnalysisSidebar";
 import type { AnalysisItem } from "./components/AnalysisItemList";
+
+interface EvaluationSummary {
+  id: string;
+  status: string;
+  totalScore: number | null;
+  evaluatorName: string | null;
+  evaluationType: string;
+  createdAt: string;
+  template: { name: string };
+}
 
 interface Interaction {
   id: string;
@@ -32,6 +47,7 @@ interface Interaction {
   duration: number | null;
   sentiment: string | null;
   score: number | null;
+  isSaved: boolean;
   transcript: string | null;
   transcriptJson: Array<{ start: number; end: number; text: string }> | null;
   summaryJson: Record<string, unknown> | null;
@@ -44,6 +60,7 @@ interface Interaction {
   interactionStrengths: AnalysisItem[];
   interactionWeaknesses: AnalysisItem[];
   interactionMissedOpportunities: AnalysisItem[];
+  evaluations: EvaluationSummary[];
 }
 
 interface ListOption {
@@ -92,6 +109,7 @@ export default function InteractionDetailPage() {
   const [listsLoading, setListsLoading] = useState(false);
   const [addingToList, setAddingToList] = useState<string | null>(null);
   const [addedToLists, setAddedToLists] = useState<Set<string>>(new Set());
+  const [aiEvaluating, setAiEvaluating] = useState(false);
 
   const fetchInteraction = useCallback(async () => {
     try {
@@ -124,7 +142,7 @@ export default function InteractionDetailPage() {
       const res = await fetch("/api/interaction-lists");
       if (res.ok) setLists(await res.json());
     } catch {
-      /* ignore */
+      toast.error("Failed to load lists");
     } finally {
       setListsLoading(false);
     }
@@ -146,11 +164,61 @@ export default function InteractionDetailPage() {
       });
       if (res.ok) {
         setAddedToLists((prev) => new Set(prev).add(listId));
+        toast.success("Added to list");
       }
     } catch {
-      /* ignore */
+      toast.error("Failed to add to list");
     } finally {
       setAddingToList(null);
+    }
+  };
+
+  const toggleSaved = async () => {
+    if (!interaction) return;
+    try {
+      await fetch(`/api/interactions/${interaction.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isSaved: !interaction.isSaved }),
+      });
+      setInteraction({ ...interaction, isSaved: !interaction.isSaved });
+      toast.success(interaction.isSaved ? "Bookmark removed" : "Bookmark added");
+    } catch {
+      toast.error("Failed to update bookmark");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!interaction) return;
+    try {
+      await fetch(`/api/interactions/${interaction.id}`, { method: "DELETE" });
+      toast.success("Moved to trash");
+      router.push("/voice-jar");
+    } catch {
+      toast.error("Failed to delete interaction");
+    }
+  };
+
+  const handleAIEvaluate = async () => {
+    if (!interaction) return;
+    setAiEvaluating(true);
+    try {
+      const res = await fetch("/api/evaluations/auto-evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interactionId: interaction.id }),
+      });
+      if (res.ok) {
+        toast.success("AI evaluation completed");
+        fetchInteraction();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "AI evaluation failed");
+      }
+    } catch {
+      toast.error("Failed to run AI evaluation");
+    } finally {
+      setAiEvaluating(false);
     }
   };
 
@@ -217,75 +285,108 @@ export default function InteractionDetailPage() {
               </span>
             </div>
           </div>
-          {/* Add to List button */}
-          <div className="relative">
+          {/* Action buttons */}
+          <div className="flex items-center gap-2 flex-shrink-0">
             <button
-              onClick={openListPicker}
+              onClick={toggleSaved}
+              className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
+              title={interaction.isSaved ? "Remove bookmark" : "Bookmark"}
+            >
+              <Bookmark className={`h-4 w-4 ${interaction.isSaved ? "text-amber-500 fill-amber-500" : "text-gray-400"}`} />
+            </button>
+            <button
+              onClick={() => router.push(`/voice-jar/evaluate/new?interactionId=${interaction.id}`)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-violet-600 border border-violet-200 hover:bg-violet-50 dark:border-violet-800 dark:hover:bg-violet-950/30 rounded-lg transition-colors"
             >
-              <ListPlus className="h-4 w-4" />
-              Add to List
+              <ClipboardCheck className="h-4 w-4" />
+              Evaluate
             </button>
-
-            {/* List picker dropdown */}
-            {showListPicker && (
-              <div className="absolute right-0 top-full mt-1 w-72 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-xl z-50">
-                <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-700">
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Add to List
-                  </span>
-                  <button onClick={() => setShowListPicker(false)}>
-                    <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
-                  </button>
-                </div>
-                <div className="max-h-60 overflow-y-auto p-1">
-                  {listsLoading && (
-                    <div className="flex items-center justify-center py-4">
-                      <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
-                    </div>
-                  )}
-                  {!listsLoading && lists.length === 0 && (
-                    <div className="text-center py-4 text-sm text-gray-500">
-                      <p>No lists yet</p>
-                      <button
-                        onClick={() => router.push("/voice-jar/lists")}
-                        className="text-violet-600 hover:text-violet-700 text-xs mt-1"
-                      >
-                        Create a list first
-                      </button>
-                    </div>
-                  )}
-                  {!listsLoading &&
-                    lists.map((list) => {
-                      const isAdded = addedToLists.has(list.id);
-                      const isAdding = addingToList === list.id;
-                      return (
-                        <button
-                          key={list.id}
-                          onClick={() => !isAdded && addToList(list.id)}
-                          disabled={isAdded || isAdding}
-                          className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors text-left ${
-                            isAdded
-                              ? "bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400"
-                              : "text-gray-700 dark:text-gray-300 hover:bg-violet-50 dark:hover:bg-violet-950/20"
-                          }`}
-                        >
-                          <span className="flex-1 truncate">{list.name}</span>
-                          <span className="text-xs text-gray-400">
-                            {list._count.items}
-                          </span>
-                          {isAdding && (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
-                          )}
-                          {isAdded && (
-                            <Check className="h-3.5 w-3.5 text-green-500" />
-                          )}
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
+            {interaction.status === "COMPLETED" && (
+              <button
+                onClick={handleAIEvaluate}
+                disabled={aiEvaluating}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-indigo-600 border border-indigo-200 hover:bg-indigo-50 dark:border-indigo-800 dark:hover:bg-indigo-950/30 disabled:opacity-50 rounded-lg transition-colors"
+              >
+                {aiEvaluating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
+                {aiEvaluating ? "Evaluating..." : "AI Evaluate"}
+              </button>
             )}
+            <div className="relative">
+              <button
+                onClick={openListPicker}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-violet-600 border border-violet-200 hover:bg-violet-50 dark:border-violet-800 dark:hover:bg-violet-950/30 rounded-lg transition-colors"
+              >
+                <ListPlus className="h-4 w-4" />
+                Add to List
+              </button>
+
+              {/* List picker dropdown */}
+              {showListPicker && (
+                <div className="absolute right-0 top-full mt-1 w-72 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-xl z-50">
+                  <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-700">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Add to List
+                    </span>
+                    <button onClick={() => setShowListPicker(false)}>
+                      <X className="h-4 w-4 text-gray-400 hover:text-gray-600" />
+                    </button>
+                  </div>
+                  <div className="max-h-60 overflow-y-auto p-1">
+                    {listsLoading && (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="h-5 w-5 animate-spin text-violet-500" />
+                      </div>
+                    )}
+                    {!listsLoading && lists.length === 0 && (
+                      <div className="text-center py-4 text-sm text-gray-500">
+                        <p>No lists yet</p>
+                        <button
+                          onClick={() => router.push("/voice-jar/lists")}
+                          className="text-violet-600 hover:text-violet-700 text-xs mt-1"
+                        >
+                          Create a list first
+                        </button>
+                      </div>
+                    )}
+                    {!listsLoading &&
+                      lists.map((list) => {
+                        const isAdded = addedToLists.has(list.id);
+                        const isAdding = addingToList === list.id;
+                        return (
+                          <button
+                            key={list.id}
+                            onClick={() => !isAdded && addToList(list.id)}
+                            disabled={isAdded || isAdding}
+                            className={`w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors text-left ${
+                              isAdded
+                                ? "bg-green-50 dark:bg-green-950/20 text-green-700 dark:text-green-400"
+                                : "text-gray-700 dark:text-gray-300 hover:bg-violet-50 dark:hover:bg-violet-950/20"
+                            }`}
+                          >
+                            <span className="flex-1 truncate">{list.name}</span>
+                            <span className="text-xs text-gray-400">
+                              {list._count.items}
+                            </span>
+                            {isAdding && (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-500" />
+                            )}
+                            {isAdded && (
+                              <Check className="h-3.5 w-3.5 text-green-500" />
+                            )}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleDelete}
+              className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+              title="Move to trash"
+            >
+              <Trash2 className="h-4 w-4 text-gray-400 hover:text-red-500" />
+            </button>
           </div>
         </div>
 
@@ -297,6 +398,50 @@ export default function InteractionDetailPage() {
           <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-3">
             <p className="text-sm text-red-700 dark:text-red-300 font-medium">Processing Failed</p>
             <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">{interaction.failReason}</p>
+          </div>
+        )}
+
+        {/* Evaluations */}
+        {interaction.evaluations && interaction.evaluations.length > 0 && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2 flex items-center gap-2">
+              <ClipboardCheck className="h-4 w-4 text-violet-500" />
+              Evaluations ({interaction.evaluations.length})
+            </h3>
+            <div className="space-y-2">
+              {interaction.evaluations.map((ev) => (
+                <button
+                  key={ev.id}
+                  onClick={() => router.push(`/voice-jar/evaluate/${ev.id}`)}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-left transition-colors"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-700 dark:text-gray-300">{ev.template.name}</span>
+                      {ev.evaluationType === "ai" ? (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">
+                          <Bot className="h-3 w-3" />
+                          AI
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                          Manual
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-400">by {ev.evaluatorName || "Unknown"}</span>
+                    <span className="block text-xs text-gray-400">
+                      {new Date(ev.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </span>
+                  </div>
+                  {ev.totalScore !== null && (
+                    <span className={`text-lg font-bold ${ev.totalScore >= 75 ? "text-green-600" : ev.totalScore >= 50 ? "text-amber-600" : "text-red-600"}`}>
+                      {ev.totalScore}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

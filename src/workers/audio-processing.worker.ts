@@ -9,6 +9,9 @@ import {
   generateStructuredSummary,
 } from "../lib/ai/openai";
 import { saveAnalysisResults } from "../lib/services/interaction.service";
+import { checkAndFireAlerts } from "../lib/services/alert.service";
+import { logVJActivity } from "../lib/services/activity-log.service";
+import { autoEvaluateInteraction } from "../lib/services/evaluation.service";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -115,6 +118,35 @@ async function processAudioJob(job: Job<AudioProcessingJobData>): Promise<void> 
     });
 
     await job.updateProgress(100);
+
+    // Fire alerts and log activity (non-blocking, failures won't break processing)
+    try {
+      await checkAndFireAlerts(interactionId, analysis.score, analysis.sentiment);
+    } catch {
+      console.warn(`[audio-worker] Alert check failed for ${interactionId}, continuing`);
+    }
+
+    try {
+      await logVJActivity({
+        action: "UPLOAD",
+        details: `Audio processing completed – score ${analysis.score}, sentiment ${analysis.sentiment}`,
+        interactionId,
+      });
+    } catch {
+      console.warn(
+        `[audio-worker] Activity log failed for ${interactionId}, continuing`
+      );
+    }
+
+    // Step 7: Auto-evaluate with default scorecard (non-blocking)
+    try {
+      await autoEvaluateInteraction(interactionId, transcript);
+    } catch {
+      console.warn(
+        `[audio-worker] Auto-evaluation failed for ${interactionId}, continuing`
+      );
+    }
+
     console.log(`[audio-worker] Completed interaction ${interactionId}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

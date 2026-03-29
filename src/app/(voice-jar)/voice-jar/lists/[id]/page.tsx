@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   List,
@@ -114,8 +115,9 @@ export default function ListDetailPage() {
         body: JSON.stringify({ interactionId }),
       });
       fetchList();
+      toast.success("Removed from list");
     } catch {
-      /* ignore */
+      toast.error("Failed to remove from list");
     }
   };
 

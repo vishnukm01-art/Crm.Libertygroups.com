@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   List,
   Plus,
@@ -47,7 +48,7 @@ export default function ManageListsPage() {
         setLists(await res.json());
       }
     } catch {
-      /* ignore */
+      toast.error("Failed to load lists");
     } finally {
       setLoading(false);
     }
@@ -77,9 +78,10 @@ export default function ManageListsPage() {
         setNewDesc("");
         setNewVisibility("PERSONAL");
         fetchLists();
+        toast.success("List created");
       }
     } catch {
-      /* ignore */
+      toast.error("Failed to create list");
     } finally {
       setCreating(false);
     }
@@ -90,8 +92,9 @@ export default function ManageListsPage() {
     try {
       await fetch(`/api/interaction-lists/${id}`, { method: "DELETE" });
       fetchLists();
+      toast.success("List deleted");
     } catch {
-      /* ignore */
+      toast.error("Failed to delete list");
     }
   };
 

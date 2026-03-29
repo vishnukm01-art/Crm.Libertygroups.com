@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import {
   Mic,
@@ -15,6 +16,11 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
+  Search,
+  Bookmark,
+  Download,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 
 interface InteractionListItem {
@@ -26,6 +32,7 @@ interface InteractionListItem {
   duration: number | null;
   sentiment: string | null;
   score: number | null;
+  isSaved: boolean;
   audioFileName: string | null;
   createdAt: string;
   _count: {
@@ -75,18 +82,46 @@ export default function VoiceJarPage() {
   const [uploading, setUploading] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [filter, setFilter] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [page, setPage] = useState(0);
+  const pageSize = 25;
 
   // Upload form state
   const [agentName, setAgentName] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [direction, setDirection] = useState("inbound");
-  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioFiles, setAudioFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, string>>({});
+
+  // Agent autocomplete
+  const [agentSuggestions, setAgentSuggestions] = useState<string[]>([]);
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/agents")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((agents: Array<{ name: string }>) => setAgentSuggestions(agents.map((a) => a.name)))
+      .catch(() => {});
+  }, []);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchDebounced(search);
+      setPage(0);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const fetchInteractions = useCallback(async () => {
     try {
       const params = new URLSearchParams();
       if (filter) params.set("status", filter);
+      if (searchDebounced) params.set("search", searchDebounced);
+      params.set("limit", String(pageSize));
+      params.set("offset", String(page * pageSize));
       const res = await fetch(`/api/interactions?${params}`);
       if (res.ok) {
         const json = await res.json();
@@ -94,13 +129,14 @@ export default function VoiceJarPage() {
         setTotal(json.total);
       }
     } catch {
-      /* ignore */
+      toast.error("Failed to load interactions");
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter, searchDebounced, page]);
 
   useEffect(() => {
+    setLoading(true);
     fetchInteractions();
   }, [fetchInteractions]);
 
@@ -115,36 +151,85 @@ export default function VoiceJarPage() {
     }
   }, [interactions, fetchInteractions]);
 
+  const toggleSaved = async (e: React.MouseEvent, id: string, currentlySaved: boolean) => {
+    e.stopPropagation();
+    try {
+      await fetch(`/api/interactions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isSaved: !currentlySaved }),
+      });
+      setInteractions((prev) =>
+        prev.map((i) => (i.id === id ? { ...i, isSaved: !currentlySaved } : i))
+      );
+      toast.success(currentlySaved ? "Bookmark removed" : "Bookmark added");
+    } catch {
+      toast.error("Failed to update bookmark");
+    }
+  };
+
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!audioFile) return;
+    if (audioFiles.length === 0) return;
 
     setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("audio", audioFile);
-      if (agentName) formData.append("agentName", agentName);
-      if (customerName) formData.append("customerName", customerName);
-      formData.append("direction", direction);
+    const progress: Record<string, string> = {};
+    const concurrency = 3;
 
-      const res = await fetch("/api/interactions", {
-        method: "POST",
-        body: formData,
-      });
+    const uploadOne = async (file: File) => {
+      progress[file.name] = "uploading";
+      setUploadProgress((prev) => ({ ...prev, [file.name]: "uploading" }));
 
-      if (res.ok) {
-        setShowUpload(false);
-        setAgentName("");
-        setCustomerName("");
-        setDirection("inbound");
-        setAudioFile(null);
-        fetchInteractions();
+      try {
+        const formData = new FormData();
+        formData.append("audio", file);
+        if (agentName) formData.append("agentName", agentName);
+        if (customerName) formData.append("customerName", customerName);
+        formData.append("direction", direction);
+
+        const res = await fetch("/api/interactions", {
+          method: "POST",
+          body: formData,
+        });
+
+        progress[file.name] = res.ok ? "done" : "error";
+      } catch {
+        progress[file.name] = "error";
       }
-    } catch {
-      /* ignore */
-    } finally {
-      setUploading(false);
-    }
+      setUploadProgress((prev) => ({ ...prev, [file.name]: progress[file.name] }));
+    };
+
+    // Process files in parallel with concurrency limit
+    const queue = [...audioFiles];
+    const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const file = queue.shift();
+        if (file) await uploadOne(file);
+      }
+    });
+    await Promise.all(workers);
+
+    const errorCount = Object.values(progress).filter((s) => s === "error").length;
+    const successCount = Object.values(progress).filter((s) => s === "done").length;
+    if (successCount > 0) toast.success(`${successCount} file${successCount > 1 ? "s" : ""} uploaded`);
+    if (errorCount > 0) toast.error(`${errorCount} file${errorCount > 1 ? "s" : ""} failed to upload`);
+
+    setUploading(false);
+    setShowUpload(false);
+    setAgentName("");
+    setCustomerName("");
+    setDirection("inbound");
+    setAudioFiles([]);
+    setUploadProgress({});
+    fetchInteractions();
+  };
+
+  const exportCSV = () => {
+    const params = new URLSearchParams();
+    if (filter) params.set("status", filter);
+    if (searchDebounced) params.set("search", searchDebounced);
+    params.set("format", "csv");
+    window.open(`/api/interactions/export?${params}`, "_blank");
   };
 
   return (
@@ -158,13 +243,15 @@ export default function VoiceJarPage() {
           <p className="text-sm text-gray-500">AI-powered call analysis with strengths, weaknesses, and missed opportunities</p>
         </div>
       </div>
+
       {/* Actions Bar */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between mb-4 gap-3">
+        <div className="flex items-center gap-2 flex-1">
           <select
             value={filter}
             onChange={(e) => {
               setFilter(e.target.value);
+              setPage(0);
               setLoading(true);
             }}
             className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:border-sky-300 focus:outline-none"
@@ -175,17 +262,36 @@ export default function VoiceJarPage() {
             <option value="PENDING">Pending</option>
             <option value="FAILED">Failed</option>
           </select>
+          <div className="relative flex-1 max-w-xs">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or transcript..."
+              className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:border-sky-300 focus:outline-none"
+            />
+          </div>
           <span className="text-sm text-gray-500">
             {total} interaction{total !== 1 ? "s" : ""}
           </span>
         </div>
-        <button
-          onClick={() => setShowUpload(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-sky-500 hover:bg-sky-600 rounded-lg transition-colors"
-        >
-          <Upload className="h-4 w-4" />
-          Upload Call
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportCSV}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 rounded-lg transition-colors"
+          >
+            <Download className="h-4 w-4" />
+            Export
+          </button>
+          <button
+            onClick={() => setShowUpload(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-sky-500 hover:bg-sky-600 rounded-lg transition-colors"
+          >
+            <Upload className="h-4 w-4" />
+            Upload Call
+          </button>
+        </div>
       </div>
 
       {/* Upload Modal */}
@@ -193,7 +299,7 @@ export default function VoiceJarPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-md p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Upload Call Recording</h3>
+              <h3 className="text-lg font-semibold">Upload Call Recording{audioFiles.length > 1 ? "s" : ""}</h3>
               <button onClick={() => setShowUpload(false)}>
                 <X className="h-5 w-5 text-gray-400 hover:text-gray-600" />
               </button>
@@ -201,34 +307,59 @@ export default function VoiceJarPage() {
             <form onSubmit={handleUpload} className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Audio File *
+                  Audio File(s) *
                 </label>
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="audio/*"
-                  onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+                  multiple
+                  onChange={(e) => setAudioFiles(Array.from(e.target.files || []))}
                   className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-sky-50 file:text-sky-600 hover:file:bg-sky-100"
                   required
                 />
+                {audioFiles.length > 1 && (
+                  <p className="text-xs text-gray-500 mt-1">{audioFiles.length} files selected (bulk upload)</p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Agent Name
-                  </label>
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Agent Name</label>
                   <input
                     type="text"
                     value={agentName}
-                    onChange={(e) => setAgentName(e.target.value)}
+                    onChange={(e) => {
+                      setAgentName(e.target.value);
+                      setShowAgentDropdown(true);
+                    }}
+                    onFocus={() => setShowAgentDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowAgentDropdown(false), 150)}
                     className="w-full px-3 py-1.5 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:border-sky-300 focus:outline-none"
                     placeholder="e.g. John Smith"
+                    autoComplete="off"
                   />
+                  {showAgentDropdown && agentSuggestions.filter((n) => n.toLowerCase().includes(agentName.toLowerCase())).length > 0 && (
+                    <ul className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-32 overflow-y-auto">
+                      {agentSuggestions
+                        .filter((n) => n.toLowerCase().includes(agentName.toLowerCase()))
+                        .slice(0, 8)
+                        .map((name) => (
+                          <li
+                            key={name}
+                            onMouseDown={() => {
+                              setAgentName(name);
+                              setShowAgentDropdown(false);
+                            }}
+                            className="px-3 py-1.5 text-sm cursor-pointer hover:bg-sky-50 dark:hover:bg-sky-950/30 text-gray-700 dark:text-gray-300"
+                          >
+                            {name}
+                          </li>
+                        ))}
+                    </ul>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Customer Name
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Customer Name</label>
                   <input
                     type="text"
                     value={customerName}
@@ -239,9 +370,7 @@ export default function VoiceJarPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Direction
-                </label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Direction</label>
                 <select
                   value={direction}
                   onChange={(e) => setDirection(e.target.value)}
@@ -251,13 +380,26 @@ export default function VoiceJarPage() {
                   <option value="outbound">Outbound</option>
                 </select>
               </div>
+              {/* Bulk upload progress */}
+              {Object.keys(uploadProgress).length > 0 && (
+                <div className="space-y-1">
+                  {Object.entries(uploadProgress).map(([name, status]) => (
+                    <div key={name} className="flex items-center gap-2 text-xs">
+                      {status === "uploading" && <Loader2 className="h-3 w-3 animate-spin text-sky-500" />}
+                      {status === "done" && <CheckCircle2 className="h-3 w-3 text-green-500" />}
+                      {status === "error" && <AlertCircle className="h-3 w-3 text-red-500" />}
+                      <span className="truncate text-gray-600">{name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <button
                 type="submit"
-                disabled={!audioFile || uploading}
+                disabled={audioFiles.length === 0 || uploading}
                 className="w-full py-2 text-sm font-medium text-white bg-sky-500 hover:bg-sky-600 disabled:bg-gray-300 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
                 {uploading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {uploading ? "Uploading..." : "Upload & Analyze"}
+                {uploading ? "Uploading..." : `Upload & Analyze${audioFiles.length > 1 ? ` (${audioFiles.length} files)` : ""}`}
               </button>
             </form>
           </div>
@@ -275,9 +417,9 @@ export default function VoiceJarPage() {
       {!loading && interactions.length === 0 && (
         <div className="text-center py-16">
           <Mic className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">No interactions yet</p>
+          <p className="text-gray-500 text-sm">No interactions found</p>
           <p className="text-gray-400 text-xs mt-1">
-            Upload a call recording to get started
+            {search ? "Try a different search term" : "Upload a call recording to get started"}
           </p>
         </div>
       )}
@@ -354,10 +496,44 @@ export default function VoiceJarPage() {
                       </span>
                     </div>
                   )}
+                  <button
+                    onClick={(e) => toggleSaved(e, item.id, item.isSaved)}
+                    className="p-1.5 rounded-lg hover:bg-amber-50 dark:hover:bg-amber-950/30 transition-colors"
+                    title={item.isSaved ? "Remove bookmark" : "Bookmark"}
+                  >
+                    <Bookmark className={`h-4 w-4 ${item.isSaved ? "text-amber-500 fill-amber-500" : "text-gray-400"}`} />
+                  </button>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Pagination */}
+      {!loading && total > pageSize && (
+        <div className="flex items-center justify-between pt-2">
+          <span className="text-sm text-gray-500">
+            Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of {total}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Prev
+            </button>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={(page + 1) * pageSize >= total}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       )}
     </div>

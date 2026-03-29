@@ -10,8 +10,34 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get("status") || undefined;
   const limit = parseInt(searchParams.get("limit") || "50");
   const offset = parseInt(searchParams.get("offset") || "0");
+  const search = searchParams.get("search") || undefined;
+  const saved = searchParams.get("saved");
+  const trash = searchParams.get("trash");
 
-  const where = status ? { status: status as "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" } : {};
+  const where: Record<string, unknown> = {};
+
+  // By default, exclude soft-deleted items
+  if (trash === "true") {
+    where.deletedAt = { not: null };
+  } else {
+    where.deletedAt = null;
+  }
+
+  if (status) {
+    where.status = status as "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+  }
+
+  if (saved === "true") {
+    where.isSaved = true;
+  }
+
+  if (search) {
+    where.OR = [
+      { customerName: { contains: search, mode: "insensitive" } },
+      { agentName: { contains: search, mode: "insensitive" } },
+      { transcript: { contains: search, mode: "insensitive" } },
+    ];
+  }
 
   const [data, total] = await Promise.all([
     prisma.interaction.findMany({

@@ -3,8 +3,8 @@ import "./globals.css";
 import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "Liberty Markets CRM",
-  description: "Customer Relationship Management for Liberty Markets",
+  title: "Voice Jar",
+  description: "AI-powered call analytics platform",
 };
 
 export default function RootLayout({
