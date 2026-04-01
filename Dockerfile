@@ -20,6 +20,7 @@ COPY . .
 ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 ENV OPENAI_API_KEY="sk-dummy"
 
+RUN mkdir -p /app/public
 RUN npx prisma generate
 RUN npm run build
 
