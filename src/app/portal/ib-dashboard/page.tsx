@@ -3,8 +3,65 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Network, DollarSign, Wallet, Users, UserCheck, Copy, Check,
-  CheckCircle, Clock, AlertCircle, Send, ChevronDown, X,
+  CheckCircle, Clock, AlertCircle, Send, ChevronDown,
 } from "lucide-react";
+
+/* ── Sub-IB Top Earnings widget ── */
+function SubIBTopEarnings({ ibId }: { ibId: string }) {
+  const [earnings, setEarnings] = useState<{ name: string; email: string; earnings: number }[]>([]);
+  const [period, setPeriod] = useState("all");
+
+  useEffect(() => {
+    if (!ibId) return;
+    fetch(`/api/portal/ib-top-earnings?userId=${ibId}&period=${period}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setEarnings(Array.isArray(d) ? d : []))
+      .catch(() => setEarnings([]));
+  }, [ibId, period]);
+
+  return (
+    <div className="pt-3">
+      <div className="flex items-center gap-2 mb-3">
+        {["all", "monthly", "weekly"].map((p) => (
+          <button
+            key={p}
+            onClick={() => setPeriod(p)}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+              period === p ? "bg-indigo-100 text-indigo-700" : "bg-gray-50 text-gray-500 hover:bg-gray-100"
+            }`}
+          >
+            {p === "all" ? "All Time" : p.charAt(0).toUpperCase() + p.slice(1)}
+          </button>
+        ))}
+      </div>
+      {earnings.length === 0 ? (
+        <p className="text-xs text-gray-400 py-4 text-center">No sub-IB earnings found.</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+              <th className="pb-2 font-medium">#</th>
+              <th className="pb-2 font-medium">Name</th>
+              <th className="pb-2 font-medium text-right">Earnings</th>
+            </tr>
+          </thead>
+          <tbody>
+            {earnings.map((e, i) => (
+              <tr key={e.email} className="border-b border-gray-50 last:border-0">
+                <td className="py-2 text-gray-400">{i + 1}</td>
+                <td className="py-2">
+                  <p className="text-gray-900 font-medium">{e.name}</p>
+                  <p className="text-xs text-gray-400">{e.email}</p>
+                </td>
+                <td className="py-2 text-right font-semibold text-emerald-600">${e.earnings.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
 
 interface Referral {
   id: string;
@@ -64,6 +121,7 @@ export default function IBDashboardPage() {
   const [copied, setCopied] = useState(false);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [processingRequest, setProcessingRequest] = useState<string | null>(null);
+  const [portalUserId, setPortalUserId] = useState("");
 
   // Share commission form
   const [shareRecipient, setShareRecipient] = useState("");
@@ -294,7 +352,7 @@ export default function IBDashboardPage() {
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
         <div className="p-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Top 5 Earnings of Sub IBs</h3>
-          <SubIBTopEarnings ibId={localStorage.getItem("portalUserId") || ""} />
+          <SubIBTopEarnings ibId={portalUserId} />
         </div>
       </div>
 
