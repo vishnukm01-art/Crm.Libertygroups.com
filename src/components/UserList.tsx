@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search, Pencil, Eye, ArrowDownToLine, ArrowUpFromLine,
-  Key, Trash2, Download, ChevronLeft, ChevronRight,
+  Key, Trash2, Download, ChevronLeft, ChevronRight, Settings,
 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -168,6 +168,7 @@ export default function UserList() {
                       <button onClick={() => router.push(`/admin/user-management/deposit?user=${user.id}`)} title="Deposit" className="p-1.5 rounded-lg hover:bg-sky-50 text-gray-400 hover:text-sky-600 transition-colors"><ArrowDownToLine className="w-4 h-4" /></button>
                       <button onClick={() => router.push(`/admin/user-management/withdraw?user=${user.id}`)} title="Withdraw" className="p-1.5 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors"><ArrowUpFromLine className="w-4 h-4" /></button>
                       <button onClick={() => router.push(`/admin/user-management/change-password?user=${user.id}`)} title="Change Password" className="p-1.5 rounded-lg hover:bg-violet-50 text-gray-400 hover:text-violet-600 transition-colors"><Key className="w-4 h-4" /></button>
+                      <button onClick={() => router.push(`/admin/user-management/user-settings?user=${user.id}`)} title="Settings" className="p-1.5 rounded-lg hover:bg-violet-50 text-gray-400 hover:text-violet-600 transition-colors"><Settings className="w-4 h-4" /></button>
                       <button onClick={() => setDeleteTarget(user)} title="Delete" className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
