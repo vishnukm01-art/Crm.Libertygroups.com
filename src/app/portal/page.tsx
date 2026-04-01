@@ -49,41 +49,47 @@ export default function PortalDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const userId = localStorage.getItem("portalUserId");
-    if (userId) {
-      fetch(`/api/portal/dashboard?userId=${userId}`)
-        .then((r) => r.ok ? r.json() : null)
-        .then((d) => {
-          setData(d);
-          if (d?.user?.isIB) {
-            try {
-              const stored = localStorage.getItem("portalUser");
-              if (stored) {
-                const u = JSON.parse(stored);
-                if (!u.isIB) {
-                  u.isIB = true;
-                  localStorage.setItem("portalUser", JSON.stringify(u));
-                }
-              }
-            } catch { /* ignore */ }
+    async function loadDashboard() {
+      let userId = localStorage.getItem("portalUserId");
+      // If localStorage is empty, fetch from JWT session
+      if (!userId) {
+        try {
+          const meRes = await fetch("/api/auth/me");
+          if (meRes.ok) {
+            const me = await meRes.json();
+            if (me.id) {
+              userId = me.id;
+              localStorage.setItem("portalUserId", me.id);
+              localStorage.setItem("portalUser", JSON.stringify({ id: me.id, name: me.name, email: me.email, role: me.role, isIB: me.isIB || false }));
+            }
           }
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-    } else {
-      setData({
-        user: {
-          name: "Demo User", email: "demo@liberty.com", phone: "+1234567890",
-          country: "United States", status: "active", kycStatus: "pending",
-          walletBalance: 5000, mt5Account: "MT5-100234", isIB: false,
-          totalCommission: 0, availableCommission: 0,
-        },
-        recentTransactions: [],
-        pendingDocuments: 2,
-        pendingBankDetails: 1,
-      });
-      setLoading(false);
+        } catch { /* ignore */ }
+      }
+      if (userId) {
+        fetch(`/api/portal/dashboard?userId=${userId}`)
+          .then((r) => r.ok ? r.json() : null)
+          .then((d) => {
+            setData(d);
+            if (d?.user?.isIB) {
+              try {
+                const stored = localStorage.getItem("portalUser");
+                if (stored) {
+                  const u = JSON.parse(stored);
+                  if (!u.isIB) {
+                    u.isIB = true;
+                    localStorage.setItem("portalUser", JSON.stringify(u));
+                  }
+                }
+              } catch { /* ignore */ }
+            }
+          })
+          .catch(() => {})
+          .finally(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
     }
+    loadDashboard();
   }, []);
 
   if (loading) return (

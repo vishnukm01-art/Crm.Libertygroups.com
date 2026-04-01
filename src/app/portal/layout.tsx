@@ -124,10 +124,23 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const [user, setUser] = useState<{ name: string; email: string; isIB?: boolean } | null>(null);
 
   useEffect(() => {
+    // Try localStorage first for instant display
     const stored = typeof window !== "undefined" ? localStorage.getItem("portalUser") : null;
     if (stored) {
       try { setUser(JSON.parse(stored)); } catch { /* ignore */ }
     }
+    // Always verify/refresh from JWT session (source of truth)
+    fetch("/api/auth/me")
+      .then((r) => r.ok ? r.json() : null)
+      .then((me) => {
+        if (me && me.id) {
+          const userData = { name: me.name, email: me.email, isIB: me.isIB || false };
+          setUser(userData);
+          localStorage.setItem("portalUser", JSON.stringify({ ...userData, id: me.id, role: me.role }));
+          localStorage.setItem("portalUserId", me.id);
+        }
+      })
+      .catch(() => { /* keep localStorage data if fetch fails */ });
   }, []);
 
   const portalNav = useMemo(() => {
