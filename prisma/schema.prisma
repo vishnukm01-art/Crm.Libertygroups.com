@@ -152,7 +152,7 @@ model IBRequest {
   updatedAt      DateTime  @updatedAt
 }
 
-// MT5 group-based commission ceilings (Smart=7, Elite=14, Prime=21, Royal=30)
+// MT5 group-based commission ceilings (SmartPip=7, ElitePip=14, PrimePips=21, RoyalPips=30)
 model GroupCommissionCeiling {
   id            String   @id @default(cuid())
   groupName     String   @unique

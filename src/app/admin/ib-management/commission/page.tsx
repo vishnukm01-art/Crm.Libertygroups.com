@@ -10,10 +10,10 @@ interface Commission { id: string; ibUserId: string; name: string; email: string
 interface GroupCeiling { id: string; groupName: string; ceilingPerLot: number; description: string | null; }
 
 const GROUP_PRESETS = [
-  { name: "Smart", ceiling: 7, color: "bg-blue-100 text-blue-700 border-blue-200" },
-  { name: "Elite", ceiling: 14, color: "bg-purple-100 text-purple-700 border-purple-200" },
-  { name: "Prime", ceiling: 21, color: "bg-amber-100 text-amber-700 border-amber-200" },
-  { name: "Royal", ceiling: 30, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { name: "SmartPip", ceiling: 7, color: "bg-blue-100 text-blue-700 border-blue-200" },
+  { name: "ElitePip", ceiling: 14, color: "bg-purple-100 text-purple-700 border-purple-200" },
+  { name: "PrimePips", ceiling: 21, color: "bg-amber-100 text-amber-700 border-amber-200" },
+  { name: "RoyalPips", ceiling: 30, color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
 ];
 
 export default function SetIBCommissionPage() {

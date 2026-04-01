@@ -28,7 +28,7 @@ export default function UpdateMT5GroupPage() {
       try {
         const [usersRes, groupsRes] = await Promise.all([
           fetch("/api/users?mt5Only=true"),
-          fetch("/api/admin/groups"),
+          fetch("/api/admin/groups?managedOnly=true"),
         ]);
         if (usersRes.ok) {
           const data = await usersRes.json();

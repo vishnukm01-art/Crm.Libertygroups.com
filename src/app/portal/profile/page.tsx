@@ -20,13 +20,6 @@ interface Mt5AccInfo {
   equity: number;
 }
 
-const MT5_GROUPS = [
-  { name: "Standard" },
-  { name: "ECN" },
-  { name: "VIP" },
-  { name: "Cent" },
-];
-
 export default function PortalProfilePage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +34,7 @@ export default function PortalProfilePage() {
   const [pwError, setPwError] = useState("");
   const [showPw, setShowPw] = useState({ current: false, new: false, confirm: false });
   const [mt5Accounts, setMt5Accounts] = useState<Mt5AccInfo[]>([]);
+  const [mt5Groups, setMt5Groups] = useState<{ name: string }[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const fetchMt5Accounts = async () => {
@@ -77,6 +71,11 @@ export default function PortalProfilePage() {
       setForm({ name: demo.name, phone: demo.phone, country: demo.country });
       setLoading(false);
     }
+    // Fetch CRM-managed groups for Create MT5 Account modal
+    fetch("/api/admin/groups?managedOnly=true")
+      .then((r) => r.ok ? r.json() : [])
+      .then((groups) => setMt5Groups(Array.isArray(groups) ? groups.map((g: { name: string }) => ({ name: g.name })) : []))
+      .catch(() => setMt5Groups([]));
   }, []);
 
   const handleSave = async () => {
@@ -295,7 +294,7 @@ export default function PortalProfilePage() {
             isOpen={showCreateModal}
             onClose={() => setShowCreateModal(false)}
             onCreated={fetchMt5Accounts}
-            groups={MT5_GROUPS}
+            groups={mt5Groups}
             accountCount={mt5Accounts.length}
           />
 
