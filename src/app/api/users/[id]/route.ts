@@ -8,6 +8,39 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const { searchParams } = new URL(req.url);
+    const details = searchParams.get("details");
+
+    if (details === "true") {
+      const user = await prisma.user.findUnique({
+        where: { id: params.id },
+        include: {
+          deposits: { orderBy: { createdAt: "desc" } },
+          withdrawals: { orderBy: { createdAt: "desc" } },
+          mt5Accounts: { orderBy: { createdAt: "desc" } },
+          bankDetails: { orderBy: { createdAt: "desc" } },
+          ibParent: { select: { id: true, name: true, email: true } },
+          ibChildren: { select: { id: true, name: true, email: true, createdAt: true, phone: true, country: true } },
+        },
+      });
+      if (!user) {
+        return NextResponse.json({ error: "User not found" }, { status: 404 });
+      }
+      const { password, ...safeUser } = user;
+      const totalDeposit = user.deposits
+        .filter((t) => t.type === "deposit" && (t.status === "approved" || t.status === "completed"))
+        .reduce((sum, t) => sum + t.amount, 0);
+      const totalWithdraw = user.withdrawals
+        .filter((t) => t.status === "approved" || t.status === "completed")
+        .reduce((sum, t) => sum + t.amount, 0);
+      return NextResponse.json({
+        ...safeUser,
+        totalDeposit,
+        totalWithdraw,
+        totalMT5Accounts: user.mt5Accounts.length,
+      });
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: params.id },
       select: {
@@ -23,6 +56,8 @@ export async function GET(
         phone: true,
         country: true,
         isIB: true,
+        marketingName: true,
+        walletBalance: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -46,7 +81,7 @@ export async function PATCH(
 ) {
   try {
     const body = await req.json();
-    const { name, phone, country, status, kycStatus, role } = body;
+    const { name, phone, country, status, kycStatus, role, marketingName } = body;
 
     const updateData: any = {};
     if (name !== undefined) updateData.name = name;
@@ -55,6 +90,7 @@ export async function PATCH(
     if (status !== undefined) updateData.status = status;
     if (kycStatus !== undefined) updateData.kycStatus = kycStatus;
     if (role !== undefined) updateData.role = role;
+    if (marketingName !== undefined) updateData.marketingName = marketingName;
 
     const user = await prisma.user.update({
       where: { id: params.id },

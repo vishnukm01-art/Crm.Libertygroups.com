@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Search, Pencil, Eye, ArrowDownToLine, ArrowUpFromLine,
-  Key, Trash2, Download, ChevronLeft, ChevronRight, Settings,
+  Pencil, Eye, ArrowDownToLine, ArrowUpFromLine,
+  Key, Trash2, Download, Settings, ShieldBan, ShieldCheck,
 } from "lucide-react";
 import ConfirmDialog from "./ConfirmDialog";
 
@@ -14,6 +14,7 @@ interface User {
   email: string;
   phone: string | null;
   country: string | null;
+  status: string;
   walletBalance: number;
   isIB: boolean;
   ibParent: { name: string } | null;
@@ -30,6 +31,7 @@ export default function UserList() {
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [blockTarget, setBlockTarget] = useState<User | null>(null);
   const [promoting, setPromoting] = useState<string | null>(null);
 
   useEffect(() => { fetchUsers(); }, []);
@@ -61,6 +63,26 @@ export default function UserList() {
     } catch (err) { console.error("Delete failed:", err); }
     setDeleteTarget(null);
   }, [deleteTarget]);
+
+  const handleBlockToggle = useCallback(async () => {
+    if (!blockTarget) return;
+    const newStatus = blockTarget.status === "blocked" ? "active" : "blocked";
+    try {
+      const res = await fetch(`/api/users/${blockTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (res.ok) {
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.id === blockTarget.id ? { ...u, status: newStatus } : u
+          )
+        );
+      }
+    } catch (err) { console.error("Block/Unblock failed:", err); }
+    setBlockTarget(null);
+  }, [blockTarget]);
 
   const handlePromoteIB = useCallback(async (user: User) => {
     setPromoting(user.id);
@@ -163,13 +185,20 @@ export default function UserList() {
                   {/* Action icons */}
                   <td className="px-3 py-3">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => router.push(`/admin/user-management/add-user?edit=${user.id}`)} title="Edit" className="p-1.5 rounded-lg hover:bg-sky-50 text-gray-400 hover:text-sky-600 transition-colors"><Pencil className="w-4 h-4" /></button>
-                      <button onClick={() => router.push(`/admin/user-management/user-list?view=${user.id}`)} title="View" className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-400 hover:text-emerald-600 transition-colors"><Eye className="w-4 h-4" /></button>
+                      <button onClick={() => router.push(`/admin/user-management/edit-user?id=${user.id}`)} title="Edit" className="p-1.5 rounded-lg hover:bg-sky-50 text-gray-400 hover:text-sky-600 transition-colors"><Pencil className="w-4 h-4" /></button>
+                      <button onClick={() => router.push(`/admin/user-management/user-details?id=${user.id}`)} title="View" className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-400 hover:text-emerald-600 transition-colors"><Eye className="w-4 h-4" /></button>
+                      <button
+                        onClick={() => setBlockTarget(user)}
+                        title={user.status === "blocked" ? "Unblock" : "Block"}
+                        className={`p-1.5 rounded-lg transition-colors ${user.status === "blocked" ? "hover:bg-emerald-50 text-red-400 hover:text-emerald-600" : "hover:bg-orange-50 text-gray-400 hover:text-orange-600"}`}
+                      >
+                        {user.status === "blocked" ? <ShieldCheck className="w-4 h-4" /> : <ShieldBan className="w-4 h-4" />}
+                      </button>
+                      <button onClick={() => setDeleteTarget(user)} title="Delete" className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
                       <button onClick={() => router.push(`/admin/user-management/deposit?user=${user.id}`)} title="Deposit" className="p-1.5 rounded-lg hover:bg-sky-50 text-gray-400 hover:text-sky-600 transition-colors"><ArrowDownToLine className="w-4 h-4" /></button>
                       <button onClick={() => router.push(`/admin/user-management/withdraw?user=${user.id}`)} title="Withdraw" className="p-1.5 rounded-lg hover:bg-amber-50 text-gray-400 hover:text-amber-600 transition-colors"><ArrowUpFromLine className="w-4 h-4" /></button>
                       <button onClick={() => router.push(`/admin/user-management/change-password?user=${user.id}`)} title="Change Password" className="p-1.5 rounded-lg hover:bg-violet-50 text-gray-400 hover:text-violet-600 transition-colors"><Key className="w-4 h-4" /></button>
                       <button onClick={() => router.push(`/admin/user-management/user-settings?user=${user.id}`)} title="Settings" className="p-1.5 rounded-lg hover:bg-violet-50 text-gray-400 hover:text-violet-600 transition-colors"><Settings className="w-4 h-4" /></button>
-                      <button onClick={() => setDeleteTarget(user)} title="Delete" className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
                   {/* Create IB */}
@@ -223,6 +252,19 @@ export default function UserList() {
         message={`Are you sure you want to delete "${deleteTarget?.name}"? This action cannot be undone.`}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      <ConfirmDialog
+        isOpen={!!blockTarget}
+        title={blockTarget?.status === "blocked" ? "Unblock User" : "Block User"}
+        message={
+          blockTarget?.status === "blocked"
+            ? `Are you sure you want to unblock "${blockTarget?.name}"? They will be able to access their account again.`
+            : `Are you sure you want to block "${blockTarget?.name}"? They will not be able to access their account.`
+        }
+        confirmLabel={blockTarget?.status === "blocked" ? "Unblock" : "Block"}
+        onConfirm={handleBlockToggle}
+        onCancel={() => setBlockTarget(null)}
       />
     </>
   );
