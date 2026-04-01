@@ -25,6 +25,13 @@ interface ShareHistory {
   createdAt: string;
 }
 
+interface PendingRequest {
+  id: string;
+  reason: string | null;
+  createdAt: string;
+  user: { id: string; name: string; email: string; phone: string | null; ibParent?: { name: string } | null };
+}
+
 interface IBData {
   ib: {
     name: string;
@@ -36,6 +43,9 @@ interface IBData {
   stats: { totalReferrals: number; activeReferrals: number };
   referrals: Referral[];
   recentShares: ShareHistory[];
+  monthlyCommission?: number;
+  clientTransaction?: { commission: number; deposit: number; withdraw: number; lot: number };
+  clientStatus?: { kyc: number; ftd: number; liveAccount: number; activeSubIB: number };
 }
 
 const statusBadge = (status: string) => {
@@ -52,6 +62,8 @@ export default function IBDashboardPage() {
   const [data, setData] = useState<IBData | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [processingRequest, setProcessingRequest] = useState<string | null>(null);
 
   // Share commission form
   const [shareRecipient, setShareRecipient] = useState("");
@@ -64,14 +76,38 @@ export default function IBDashboardPage() {
   const fetchData = useCallback(async () => {
     try {
       const userId = localStorage.getItem("portalUserId") || "demo";
-      const res = await fetch(`/api/portal/ib-dashboard?userId=${userId}`);
-      if (res.ok) setData(await res.json());
+      const [dashRes, reqRes] = await Promise.all([
+        fetch(`/api/portal/ib-dashboard?userId=${userId}`),
+        fetch("/api/portal/ib-requests"),
+      ]);
+      if (dashRes.ok) setData(await dashRes.json());
+      if (reqRes.ok) {
+        const reqs = await reqRes.json();
+        setPendingRequests(Array.isArray(reqs) ? reqs : []);
+      }
     } catch { /* ignore */ } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const handleApproveReject = async (requestId: string, action: "approve" | "reject") => {
+    setProcessingRequest(requestId);
+    try {
+      const res = await fetch("/api/portal/ib-requests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requestId, action }),
+      });
+      if (res.ok) {
+        setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
+        fetchData();
+      }
+    } catch { /* ignore */ } finally {
+      setProcessingRequest(null);
+    }
+  };
 
   const handleCopy = async () => {
     if (!data?.ib.referralLink) return;
@@ -199,6 +235,108 @@ export default function IBDashboardPage() {
           <p className="text-xl font-bold text-gray-900">{data.stats.activeReferrals}</p>
         </div>
       </div>
+
+
+      {/* Monthly Commission */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="p-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">Monthly Commission</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Your commission for the current month</p>
+        </div>
+        <div className="p-6 text-center">
+          <p className="text-4xl font-bold text-emerald-600">${data?.monthlyCommission?.toFixed(2) || "0.00"}</p>
+          <p className="text-xs text-gray-400 mt-2">{new Date().toLocaleString("default", { month: "long", year: "numeric" })} Commission</p>
+        </div>
+      </div>
+
+      {/* My Client Transaction */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="p-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">My Client Transaction</h3>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100">
+          {[
+            { label: "Commission", value: `$${data?.clientTransaction?.commission?.toFixed(2) || "0.00"}`, color: "text-emerald-600" },
+            { label: "Deposit", value: `$${data?.clientTransaction?.deposit?.toFixed(2) || "0.00"}`, color: "text-sky-600" },
+            { label: "Withdraw", value: `$${data?.clientTransaction?.withdraw?.toFixed(2) || "0.00"}`, color: "text-amber-600" },
+            { label: "Lot", value: data?.clientTransaction?.lot?.toFixed(2) || "0.00", color: "text-purple-600" },
+          ].map((item) => (
+            <div key={item.label} className="p-5 text-center">
+              <p className={`text-2xl font-bold ${item.color}`}>{item.value}</p>
+              <p className="text-xs text-gray-500 mt-1">{item.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Client Status Indicators */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="p-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">Client Status</h3>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-gray-100">
+          {[
+            { label: "KYC", value: data?.clientStatus?.kyc ?? 0, icon: "✅" },
+            { label: "FTD", value: data?.clientStatus?.ftd ?? 0, icon: "💰" },
+            { label: "Live Account", value: data?.clientStatus?.liveAccount ?? 0, icon: "📊" },
+            { label: "Active & Sub IB", value: data?.clientStatus?.activeSubIB ?? 0, icon: "👥" },
+          ].map((item) => (
+            <div key={item.label} className="p-5 text-center">
+              <div className="text-2xl mb-1">{item.icon}</div>
+              <p className="text-xl font-bold text-gray-900">{item.value}</p>
+              <p className="text-xs text-gray-500 mt-1">{item.label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Top 5 Earnings of Sub IBs */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="p-4 border-b border-gray-100">
+          <h3 className="font-semibold text-gray-900">Top 5 Earnings of Sub IBs</h3>
+          <SubIBTopEarnings ibId={localStorage.getItem("portalUserId") || ""} />
+        </div>
+      </div>
+
+      {/* Pending IB Requests from Downline */}
+      {pendingRequests.length > 0 && (
+        <div className="bg-white rounded-2xl border border-amber-200 overflow-hidden">
+          <div className="p-4 border-b border-amber-100 bg-amber-50">
+            <h3 className="font-semibold text-amber-900 flex items-center gap-2">
+              <Clock className="w-4 h-4" />
+              Pending IB Applications ({pendingRequests.length})
+            </h3>
+            <p className="text-xs text-amber-700 mt-0.5">Users in your network requesting IB status. First approver finalizes.</p>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {pendingRequests.map((req) => (
+              <div key={req.id} className="px-4 py-3 flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{req.user.name}</p>
+                  <p className="text-xs text-gray-500">{req.user.email} {req.user.ibParent?.name ? `(under ${req.user.ibParent.name})` : ""}</p>
+                  {req.reason && <p className="text-xs text-gray-400 mt-0.5 italic">{req.reason}</p>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => handleApproveReject(req.id, "approve")}
+                    disabled={processingRequest === req.id}
+                    className="px-3 py-1.5 bg-emerald-500 text-white text-xs font-medium rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
+                  >
+                    {processingRequest === req.id ? "..." : "Approve"}
+                  </button>
+                  <button
+                    onClick={() => handleApproveReject(req.id, "reject")}
+                    disabled={processingRequest === req.id}
+                    className="px-3 py-1.5 bg-red-50 text-red-600 text-xs font-medium rounded-lg hover:bg-red-100 transition-colors disabled:opacity-50"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Referral Link */}
       <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-6 text-white">

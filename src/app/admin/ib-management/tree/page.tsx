@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import PageShell from "@/components/PageShell";
-import { GitBranch, Users, ChevronRight, ChevronDown } from "lucide-react";
+import { GitBranch, Users, ChevronRight, ChevronDown, Eye } from "lucide-react";
 
 interface IBNode {
   id: string;
@@ -10,6 +11,8 @@ interface IBNode {
   email: string;
   totalCommission: number;
   totalClients: number;
+  isIB: boolean;
+  ibParentId: string | null;
   children: IBNode[];
 }
 
@@ -28,17 +31,26 @@ function TreeNode({ node, depth = 0 }: { node: IBNode; depth?: number }) {
         ) : (
           <div className="w-4 h-4 shrink-0" />
         )}
-        <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center text-xs font-bold shrink-0">
+        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+          node.isIB ? "bg-sky-100 text-sky-600" : "bg-gray-100 text-gray-600"
+        }`}>
           {node.name.charAt(0).toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-gray-900 truncate">{node.name}</p>
           <p className="text-xs text-gray-400">{node.email}</p>
         </div>
+        <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded text-[10px] font-medium">L{depth}</span>
         <div className="flex items-center gap-4 text-xs text-gray-500">
           <span className="flex items-center gap-1"><Users className="w-3 h-3" />{node.totalClients}</span>
           <span className="font-medium text-emerald-600">${node.totalCommission.toFixed(2)}</span>
         </div>
+        {node.isIB && (
+          <Link href={`/admin/ib-management/${node.id}/clients`} onClick={(e) => e.stopPropagation()}
+            className="opacity-0 group-hover:opacity-100 px-2 py-1 bg-sky-500 text-white rounded-md text-xs font-medium hover:bg-sky-600 transition-all flex items-center gap-1">
+            <Eye className="w-3 h-3" />View
+          </Link>
+        )}
       </div>
       {expanded && hasChildren && (
         <div className="mt-1">
@@ -62,36 +74,47 @@ export default function IBTreePage() {
         if (!res.ok) return;
         const ibUsers = await res.json();
 
-        const usersRes = await fetch("/api/users");
-        const allUsers = usersRes.ok ? await usersRes.json() : [];
+        // Build a proper tree from the IB users
+        // Fetch all users to understand the parent-child relationships
+        const allUsersRes = await fetch("/api/users?includeParent=true");
+        const allUsers = allUsersRes.ok ? await allUsersRes.json() : [];
 
-        const ibMap = new Map<string, IBNode>();
-        ibUsers.forEach((ib: any) => {
-          ibMap.set(ib.id, {
+        const ibIds = new Set(ibUsers.map((ib: { id: string }) => ib.id));
+        const nodeMap = new Map<string, IBNode>();
+
+        // Create nodes for all IBs
+        ibUsers.forEach((ib: { id: string; name: string; email: string; totalCommission: number; totalClients: number }) => {
+          nodeMap.set(ib.id, {
             id: ib.id,
             name: ib.name,
             email: ib.email,
             totalCommission: ib.totalCommission || 0,
-            totalClients: 0,
+            totalClients: ib.totalClients || 0,
+            isIB: true,
+            ibParentId: null,
             children: [],
           });
         });
 
-        allUsers.forEach((u: any) => {
-          if (u.ibParent && ibMap.has(u.ibParent.name ? u.id : "")) {
-            // skip
+        // Set parent relationships from allUsers data
+        allUsers.forEach((u: { id: string; ibParentId?: string }) => {
+          const node = nodeMap.get(u.id);
+          if (node && u.ibParentId) {
+            node.ibParentId = u.ibParentId;
           }
         });
 
-        // Count clients per IB
-        allUsers.forEach((u: any) => {
-          ibUsers.forEach((ib: any) => {
-            const node = ibMap.get(ib.id);
-            if (node) node.totalClients = ib.totalClients || 0;
-          });
+        // Build tree: attach children to parents
+        const rootNodes: IBNode[] = [];
+        nodeMap.forEach((node) => {
+          if (node.ibParentId && nodeMap.has(node.ibParentId)) {
+            nodeMap.get(node.ibParentId)!.children.push(node);
+          } else {
+            rootNodes.push(node);
+          }
         });
 
-        setTree(Array.from(ibMap.values()));
+        setTree(rootNodes);
       } catch { /* ignore */ } finally {
         setLoading(false);
       }

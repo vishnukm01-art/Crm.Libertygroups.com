@@ -64,6 +64,7 @@ export const navigationItems: NavigationItem[] = [
     children: [
       { name: "IB Users", href: "/admin/ib-management/list", icon: "List" },
       { name: "IB Requests", href: "/admin/ib-management/requests", icon: "UserCheck" },
+      { name: "IB Tree", href: "/admin/ib-management/tree", icon: "GitBranch" },
       { name: "Set IB Commission", href: "/admin/ib-management/commission", icon: "Settings" },
       { name: "Share Commission", href: "/admin/ib-management/share-commission", icon: "DollarSign" },
       { name: "Move Client to IB", href: "/admin/ib-management/move-client", icon: "UserRoundPlus" },
@@ -180,11 +181,6 @@ export const navigationItems: NavigationItem[] = [
     name: "Tickets",
     href: "/admin/tickets",
     icon: "Ticket",
-  },
-  {
-    name: "Voice Jar",
-    href: "/voice-jar",
-    icon: "Mic",
   },
   {
     name: "Settings",

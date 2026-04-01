@@ -7,16 +7,17 @@ import { CreditCard, Search } from "lucide-react";
 interface BankDetail {
   id: string;
   userName: string;
-  email: string;
+  userEmail: string;
   bankName: string;
   accountNumber: string;
   status: string;
-  submittedAt: string;
+  createdAt: string;
 }
 
 export default function BankDetailsListPage() {
   const [bankDetails, setBankDetails] = useState<BankDetail[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 10;
@@ -29,37 +30,26 @@ export default function BankDetailsListPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleApprove = async (id: string) => {
+  const handleAction = async (id: string, status: "approved" | "rejected") => {
+    setActionLoading(`${id}-${status}`);
     try {
       const res = await fetch(`/api/bank-details/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "approved" }),
+        body: JSON.stringify({ status }),
       });
       if (res.ok) {
         setBankDetails((prev) =>
-          prev.map((b) => (b.id === id ? { ...b, status: "approved" } : b))
+          prev.map((b) => (b.id === id ? { ...b, status } : b))
         );
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || `Failed to ${status === "approved" ? "approve" : "reject"} bank details`);
       }
     } catch {
-      /* placeholder */
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    try {
-      const res = await fetch(`/api/bank-details/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "rejected" }),
-      });
-      if (res.ok) {
-        setBankDetails((prev) =>
-          prev.map((b) => (b.id === id ? { ...b, status: "rejected" } : b))
-        );
-      }
-    } catch {
-      /* placeholder */
+      alert("Network error. Please try again.");
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -77,7 +67,7 @@ export default function BankDetailsListPage() {
   const filtered = bankDetails.filter(
     (b) =>
       b.userName.toLowerCase().includes(search.toLowerCase()) ||
-      b.email.toLowerCase().includes(search.toLowerCase()) ||
+      b.userEmail.toLowerCase().includes(search.toLowerCase()) ||
       b.bankName.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -124,26 +114,32 @@ export default function BankDetailsListPage() {
                   <tr key={b.id} className="table-row-hover border-b border-gray-50 last:border-0">
                     <td className="px-4 py-3 font-mono text-xs text-gray-500">{b.id.slice(0, 8)}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{b.userName}</td>
-                    <td className="px-4 py-3 text-gray-600">{b.email}</td>
+                    <td className="px-4 py-3 text-gray-600">{b.userEmail}</td>
                     <td className="px-4 py-3 text-gray-600">{b.bankName}</td>
                     <td className="px-4 py-3 font-mono text-xs text-gray-600">{b.accountNumber}</td>
                     <td className="px-4 py-3">{getStatusBadge(b.status)}</td>
-                    <td className="px-4 py-3 text-gray-500">{new Date(b.submittedAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-gray-500">{new Date(b.createdAt).toLocaleDateString()}</td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleApprove(b.id)}
-                          className="text-xs text-sky-600 hover:text-sky-700 font-medium"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleReject(b.id)}
-                          className="text-xs text-red-500 hover:text-red-600 font-medium"
-                        >
-                          Reject
-                        </button>
-                      </div>
+                      {b.status === "pending" ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleAction(b.id, "approved")}
+                            disabled={actionLoading !== null}
+                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {actionLoading === `${b.id}-approved` ? "Approving..." : "Approve"}
+                          </button>
+                          <button
+                            onClick={() => handleAction(b.id, "rejected")}
+                            disabled={actionLoading !== null}
+                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {actionLoading === `${b.id}-rejected` ? "Rejecting..." : "Reject"}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-400">--</span>
+                      )}
                     </td>
                   </tr>
                 ))

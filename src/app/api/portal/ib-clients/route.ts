@@ -17,30 +17,63 @@ export async function GET(request: NextRequest) {
     }
 
     const search = request.nextUrl.searchParams.get("search") || "";
+    const requestedLevel = parseInt(request.nextUrl.searchParams.get("level") || "1", 10);
 
-    const clients = await prisma.user.findMany({
-      where: {
-        ibParentId: userId,
-        ...(search ? {
-          OR: [
-            { name: { contains: search, mode: "insensitive" } },
-            { email: { contains: search, mode: "insensitive" } },
-          ],
-        } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        phone: true,
-        status: true,
-        isIB: true,
-        mt5Account: true,
-        walletBalance: true,
-        createdAt: true,
-      },
-    });
+    // Walk down the hierarchy to find users at the requested level
+    let currentParentIds = [userId];
+    for (let depth = 1; depth < requestedLevel; depth++) {
+      const nextLevel = await prisma.user.findMany({
+        where: { ibParentId: { in: currentParentIds } },
+        select: { id: true },
+      });
+      currentParentIds = nextLevel.map((u) => u.id);
+      if (currentParentIds.length === 0) break;
+    }
+
+    const searchFilter = search ? {
+      OR: [
+        { name: { contains: search, mode: "insensitive" as const } },
+        { email: { contains: search, mode: "insensitive" as const } },
+      ],
+    } : {};
+
+    const clients = currentParentIds.length > 0
+      ? await prisma.user.findMany({
+          where: {
+            ibParentId: { in: currentParentIds },
+            ...searchFilter,
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true,
+            status: true,
+            isIB: true,
+            mt5Account: true,
+            walletBalance: true,
+            createdAt: true,
+            ibParent: { select: { name: true } },
+          },
+        })
+      : [];
+
+    // Count max levels
+    let maxLevel = 0;
+    let checkParents = [userId];
+    for (let d = 0; d < 10 && checkParents.length > 0; d++) {
+      const nextChildren = await prisma.user.findMany({
+        where: { ibParentId: { in: checkParents } },
+        select: { id: true },
+      });
+      if (nextChildren.length > 0) {
+        maxLevel = d + 1;
+        checkParents = nextChildren.map((c) => c.id);
+      } else {
+        break;
+      }
+    }
 
     const stats = {
       total: clients.length,
@@ -49,7 +82,14 @@ export async function GET(request: NextRequest) {
       subIBs: clients.filter((c) => c.isIB).length,
     };
 
-    return NextResponse.json({ clients, stats });
+    return NextResponse.json({
+      clients: clients.map((c) => ({
+        ...c,
+        parentName: c.ibParent?.name || null,
+      })),
+      stats,
+      maxLevel,
+    });
   } catch (error) {
     console.error("Fetch IB clients error:", error);
     return NextResponse.json({ error: "Failed to fetch clients" }, { status: 500 });

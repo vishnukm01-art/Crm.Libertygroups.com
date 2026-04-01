@@ -1,196 +1,124 @@
 #!/usr/bin/env node
-/**
- * Vercel CLI Deployment Script (Cross-Platform)
- * Usage: node deploy.cjs [project-path] [options]
- * Options:
- *   --prod    Deploy to production environment
- *   --yes     Skip confirmation prompts
- * Works on: Windows, macOS, Linux
- */
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const isWindows = os.platform() === 'win32';
-// Whitelist of allowed command names to prevent command injection
 const ALLOWED_COMMANDS = new Set(['vercel', 'npm', 'pnpm', 'yarn']);
-function log(msg) {
-  console.error(msg);
-}
+function log(msg) { console.error(msg); }
 function commandExists(cmd) {
-  if (!ALLOWED_COMMANDS.has(cmd)) {
-    throw new Error(`Command not in whitelist: ${cmd}`);
-  }
-  try {
-    if (isWindows) {
-      const result = spawnSync('where', [cmd], { stdio: 'ignore' });
-      return result.status === 0;
-    } else {
-      const result = spawnSync('sh', ['-c', `command -v "$1"`, '--', cmd], { stdio: 'ignore' });
-      return result.status === 0;
-    }
-  } catch {
-    return false;
-  }
+if (!ALLOWED_COMMANDS.has(cmd)) throw new Error(`Command not in whitelist: ${cmd}`);
+try {
+if (isWindows) return spawnSync('where', [cmd], { stdio: 'ignore' }).status === 0;
+else return spawnSync('sh', ['-c', 'command -v "$1"', '--', cmd], { stdio: 'ignore' }).status === 0;
+} catch { return false; }
 }
 function getCommandOutput(cmd, args) {
-  try {
-    const result = spawnSync(cmd, args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], shell: isWindows });
-    return result.status === 0 ? (result.stdout || '').trim() : null;
-  } catch {
-    return null;
-  }
+try {
+const result = spawnSync(cmd, args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], shell: isWindows });
+return result.status === 0 ? (result.stdout || '').trim() : null;
+} catch { return null; }
 }
 function parseArgs(args) {
-  const result = {
-    projectPath: '.',
-    prod: true,
-    yes: false,
-    skipBuild: false
-  };
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '--prod') {
-      result.prod = true;
-    } else if (arg === '--yes' || arg === '-y') {
-      result.yes = true;
-    } else if (arg === '--skip-build') {
-      result.skipBuild = true;
-    } else if (!arg.startsWith('-')) {
-      result.projectPath = arg;
-    } else {
-      log(`Unknown option: ${arg}`);
-      process.exit(1);
-    }
-  }
-  return result;
+const result = { projectPath: '.', prod: true, yes: false, skipBuild: false };
+for (const arg of args) {
+if (arg === '--prod') result.prod = true;
+else if (arg === '--yes' || arg === '-y') result.yes = true;
+else if (arg === '--skip-build') result.skipBuild = true;
+else if (!arg.startsWith('-')) result.projectPath = arg;
+}
+return result;
 }
 function checkVercelInstalled() {
-  if (!commandExists('vercel')) {
-    log('Error: Vercel CLI is not installed');
-    log('Please run install script first to install Vercel CLI');
-    process.exit(1);
-  }
-  const version = getCommandOutput('vercel', ['--version']) || 'unknown';
-  log(`Vercel CLI version: ${version}`);
+if (!commandExists('vercel')) { log('Error: Vercel CLI not installed'); process.exit(1); }
+log(`Vercel CLI version: ${getCommandOutput('vercel', ['--version']) || 'unknown'}`);
 }
 function checkLoginStatus() {
-  log('Checking login status...');
-  try {
-    const result = spawnSync('vercel', ['whoami'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], shell: isWindows });
-    const output = (result.stdout || '').trim();
-    if (result.status === 0 && output && !output.includes('Error') && !output.includes('not logged in')) {
-      log(`Logged in as: ${output}`);
-      return true;
-    }
-  } catch {
-    // Not logged in
-  }
-  return false;
+log('Checking login status...');
+try {
+const result = spawnSync('vercel', ['whoami'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], shell: isWindows });
+const output = (result.stdout || '').trim();
+if (result.status === 0 && output && !output.includes('Error') && !output.includes('not logged in')) {
+log(`Logged in as: ${output}`); return true;
+}
+} catch {} return false;
 }
 function checkProject(projectPath) {
-  const absPath = path.resolve(projectPath);
-  if (!fs.existsSync(absPath) || !fs.statSync(absPath).isDirectory()) {
-    log(`Error: Project directory does not exist: ${absPath}`);
-    process.exit(1);
-  }
-  log(`Project path: ${absPath}`);
-  const packageJson = path.join(absPath, 'package.json');
-  const indexHtml = path.join(absPath, 'index.html');
-  if (fs.existsSync(packageJson)) {
-    log('Detected package.json');
-  } else if (fs.existsSync(indexHtml)) {
-    log('Detected static HTML project');
-  } else {
-    log('Warning: No package.json or index.html detected');
-  }
-  return absPath;
+const absPath = path.resolve(projectPath);
+if (!fs.existsSync(absPath) || !fs.statSync(absPath).isDirectory()) {
+log(`Error: Project directory does not exist: ${absPath}`); process.exit(1);
+}
+log(`Project path: ${absPath}`);
+return absPath;
 }
 function detectPackageManager(projectPath) {
-  // Check lock files to determine package manager
-  if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) return 'pnpm';
-  if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) return 'yarn';
-  if (fs.existsSync(path.join(projectPath, 'package-lock.json'))) return 'npm';
-  // Fallback to checking global availability
-  if (commandExists('pnpm')) return 'pnpm';
-  if (commandExists('yarn')) return 'yarn';
-  if (commandExists('npm')) return 'npm';
-  return null;
+if (fs.existsSync(path.join(projectPath, 'pnpm-lock.yaml'))) return 'pnpm';
+if (fs.existsSync(path.join(projectPath, 'yarn.lock'))) return 'yarn';
+if (fs.existsSync(path.join(projectPath, 'package-lock.json'))) return 'npm';
+if (commandExists('pnpm')) return 'pnpm';
+if (commandExists('yarn')) return 'yarn';
+if (commandExists('npm')) return 'npm';
+return null;
+}
+function runBuildIfNeeded(projectPath) {
+const packageJsonPath = path.join(projectPath, 'package.json');
+if (!fs.existsSync(packageJsonPath)) { log('No package.json, skipping build'); return true; }
+let packageJson;
+try { packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8')); } catch { return true; }
+if (!packageJson.scripts || !packageJson.scripts.build) { log('No build script, skipping'); return true; }
+log(''); log('========================================'); log('Running pre-deployment build...'); log('========================================'); log('');
+const pkgManager = detectPackageManager(projectPath);
+if (!pkgManager) { log('Error: No package manager found'); process.exit(1); }
+log(`Using: ${pkgManager}`);
+const nodeModulesPath = path.join(projectPath, 'node_modules');
+if (!fs.existsSync(nodeModulesPath)) {
+log('Installing dependencies...');
+const installArgs = pkgManager === 'yarn' ? [] : ['install'];
+const result = spawnSync(pkgManager, installArgs, { cwd: projectPath, stdio: 'inherit', shell: isWindows });
+if (result.status !== 0) { log('Install failed'); process.exit(1); }
+}
+const buildArgs = pkgManager === 'npm' ? ['run', 'build'] : ['build'];
+log(`Executing: ${pkgManager} ${buildArgs.join(' ')}`); log('');
+const result = spawnSync(pkgManager, buildArgs, { cwd: projectPath, stdio: 'inherit', shell: isWindows });
+if (result.status !== 0) { log('Build FAILED!'); process.exit(1); }
+log(''); log('Build completed successfully!');
+return true;
 }
 function doDeploy(projectPath, options) {
-  log('');
-  log('Starting deployment...');
-  log('');
-  const cmdParts = ['vercel'];
-  if (options.yes) cmdParts.push('--yes');
-  if (options.prod) {
-    cmdParts.push('--prod');
-    log('Deployment environment: Production (Public)');
-  } else {
-    log('Deployment environment: Preview');
-  }
-  const cmd = cmdParts.join(' ');
-  log(`Executing command: ${cmd}`);
-  log('');
-  log('========================================');
-  try {
-    const args = cmdParts.slice(1);
-    const result = spawnSync('vercel', args, {
-      cwd: projectPath,
-      encoding: 'utf8',
-      stdio: ['inherit', 'pipe', 'pipe'],
-      timeout: 300000, // 5 minutes timeout
-      shell: isWindows
-    });
-    const output = (result.stdout || '') + (result.stderr || '');
-    log(output);
-    if (result.status !== 0) {
-      throw new Error('Deployment command failed');
-    }
-    // Extract aliased production URL (public URL without random characters)
-    const aliasedMatch = output.match(/Aliased:\s*(https:\/\/[a-zA-Z0-9.-]+\.vercel\.app)/i);
-    const productionUrl = aliasedMatch ? aliasedMatch[1] : null;
-    // Extract deployment-specific URL as fallback
-    const deploymentMatch = output.match(/Production:\s*(https:\/\/[a-zA-Z0-9.-]+\.vercel\.app)/i);
-    const deploymentUrl = deploymentMatch ? deploymentMatch[1] : null;
-    // Use aliased URL (public) first, fallback to deployment URL
-    const finalUrl = productionUrl || deploymentUrl;
-    log('');
-    log('========================================');
-    log('Deployment successful!');
-    log('========================================');
-    log('');
-    if (finalUrl) {
-      log(`Your site is live! Visit: ${finalUrl}`);
-      log('');
-      console.log(JSON.stringify({ status: 'success', url: finalUrl }));
-    } else {
-      console.log(JSON.stringify({ status: 'success', message: 'Deployment successful' }));
-    }
-  } catch (error) {
-    log(error.message || '');
-    log('');
-    log('Deployment failed');
-    process.exit(1);
-  }
+log(''); log('Starting deployment...'); log('');
+const args = [];
+if (options.yes) args.push('--yes');
+if (options.prod) { args.push('--prod'); log('Environment: Production'); }
+else log('Environment: Preview');
+log(`Executing: vercel ${args.join(' ')}`); log(''); log('========================================');
+const result = spawnSync('vercel', args, {
+cwd: projectPath, encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'], timeout: 300000, shell: isWindows
+});
+const output = (result.stdout || '') + (result.stderr || '');
+log(output);
+if (result.status !== 0) { log('Deployment failed'); process.exit(1); }
+const aliasedMatch = output.match(/Aliased:\s*(https:\/\/[a-zA-Z0-9.-]+\.vercel\.app)/i);
+const deploymentMatch = output.match(/Production:\s*(https:\/\/[a-zA-Z0-9.-]+\.vercel\.app)/i);
+const urlMatch = output.match(/(https:\/\/[a-zA-Z0-9.-]+\.vercel\.app)/);
+const finalUrl = (aliasedMatch && aliasedMatch[1]) || (deploymentMatch && deploymentMatch[1]) || (urlMatch && urlMatch[1]);
+log(''); log('========================================'); log('Deployment successful!'); log('========================================'); log('');
+if (finalUrl) {
+log(`Your site is live: ${finalUrl}`);
+console.log(JSON.stringify({ status: 'success', url: finalUrl }));
+} else {
+console.log(JSON.stringify({ status: 'success', message: 'Deployment successful' }));
+}
 }
 function main() {
-  log('========================================');
-  log('Vercel CLI Project Deployment');
-  log('========================================');
-  log('');
-  const args = process.argv.slice(2);
-  const options = parseArgs(args);
-  checkVercelInstalled();
-  log('');
-  if (!checkLoginStatus()) {
-    log('');
-    log('Error: Not logged in');
-    log('Please run login script first to authorize');
-    process.exit(1);
-  }
-  log('');
-  const projectPath = checkProject(options.projectPath);
-  doDeploy(projectPath, options);
+log('========================================'); log('Vercel CLI Project Deployment'); log('========================================'); log('');
+const args = process.argv.slice(2);
+const options = parseArgs(args);
+checkVercelInstalled(); log('');
+if (!checkLoginStatus()) { log('Error: Not logged in'); process.exit(1); }
+log('');
+const projectPath = checkProject(options.projectPath);
+if (!options.skipBuild) runBuildIfNeeded(projectPath);
+else log('Build step skipped');
+doDeploy(projectPath, options);
 }
 main();

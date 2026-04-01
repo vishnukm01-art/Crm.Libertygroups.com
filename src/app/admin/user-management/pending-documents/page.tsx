@@ -7,15 +7,17 @@ import { FileCheck, Search } from "lucide-react";
 interface Document {
   id: string;
   userName: string;
-  email: string;
-  documentType: string;
-  submittedAt: string;
+  userEmail: string;
+  type: string;
+  createdAt: string;
   status: string;
+  fileName?: string;
 }
 
 export default function PendingDocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const perPage = 10;
@@ -28,40 +30,31 @@ export default function PendingDocumentsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleApprove = async (id: string) => {
+  const handleAction = async (id: string, status: "approved" | "rejected") => {
+    setActionLoading(`${id}-${status}`);
     try {
       const res = await fetch(`/api/documents/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "approved" }),
+        body: JSON.stringify({ status }),
       });
       if (res.ok) {
         setDocuments((prev) => prev.filter((d) => d.id !== id));
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || `Failed to ${status === "approved" ? "approve" : "reject"} document`);
       }
     } catch {
-      /* placeholder */
-    }
-  };
-
-  const handleReject = async (id: string) => {
-    try {
-      const res = await fetch(`/api/documents/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "rejected" }),
-      });
-      if (res.ok) {
-        setDocuments((prev) => prev.filter((d) => d.id !== id));
-      }
-    } catch {
-      /* placeholder */
+      alert("Network error. Please try again.");
+    } finally {
+      setActionLoading(null);
     }
   };
 
   const filtered = documents.filter(
     (d) =>
       d.userName.toLowerCase().includes(search.toLowerCase()) ||
-      d.email.toLowerCase().includes(search.toLowerCase())
+      d.userEmail.toLowerCase().includes(search.toLowerCase())
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
@@ -106,9 +99,9 @@ export default function PendingDocumentsPage() {
                   <tr key={d.id} className="table-row-hover border-b border-gray-50 last:border-0">
                     <td className="px-4 py-3 font-mono text-xs text-gray-500">{d.id.slice(0, 8)}</td>
                     <td className="px-4 py-3 font-medium text-gray-900">{d.userName}</td>
-                    <td className="px-4 py-3 text-gray-600">{d.email}</td>
-                    <td className="px-4 py-3 text-gray-600">{d.documentType}</td>
-                    <td className="px-4 py-3 text-gray-500">{new Date(d.submittedAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-gray-600">{d.userEmail}</td>
+                    <td className="px-4 py-3 text-gray-600">{d.type}</td>
+                    <td className="px-4 py-3 text-gray-500">{new Date(d.createdAt).toLocaleDateString()}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
                         Pending
@@ -117,16 +110,18 @@ export default function PendingDocumentsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => handleApprove(d.id)}
-                          className="text-xs text-sky-600 hover:text-sky-700 font-medium"
+                          onClick={() => handleAction(d.id, "approved")}
+                          disabled={actionLoading !== null}
+                          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
-                          Approve
+                          {actionLoading === `${d.id}-approved` ? "Approving..." : "Approve"}
                         </button>
                         <button
-                          onClick={() => handleReject(d.id)}
-                          className="text-xs text-red-500 hover:text-red-600 font-medium"
+                          onClick={() => handleAction(d.id, "rejected")}
+                          disabled={actionLoading !== null}
+                          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
-                          Reject
+                          {actionLoading === `${d.id}-rejected` ? "Rejecting..." : "Reject"}
                         </button>
                       </div>
                     </td>

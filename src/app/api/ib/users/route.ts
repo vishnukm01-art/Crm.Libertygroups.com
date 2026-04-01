@@ -3,6 +3,25 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET() {
   try {
+    // Auto-sync: fix users who have role "ib" or approved IB requests but isIB is still false
+    const usersToFix = await prisma.user.findMany({
+      where: {
+        isIB: false,
+        OR: [
+          { role: "ib" },
+          { ibRequests: { some: { status: "approved" } } },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (usersToFix.length > 0) {
+      await prisma.user.updateMany({
+        where: { id: { in: usersToFix.map((u) => u.id) } },
+        data: { isIB: true, role: "ib" },
+      });
+    }
+
     const ibUsers = await prisma.user.findMany({
       where: { isIB: true },
       select: {

@@ -70,6 +70,59 @@ export default function MyCommissionPage() {
           </tbody></table></div>
         )}
       </div>
+
+      {/* Top 5 Earnings of Sub IBs */}
+      <Top5Earnings />
+    </div>
+  );
+}
+
+function Top5Earnings() {
+  const [period, setPeriod] = useState<"all" | "yearly" | "monthly" | "weekly">("all");
+  const [topIBs, setTopIBs] = useState<{ name: string; email: string; earnings: number }[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    const userId = localStorage.getItem("portalUserId") || "demo";
+    fetch(`/api/portal/ib-top-earnings?userId=${userId}&period=${period}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then(setTopIBs)
+      .catch(() => setTopIBs([]))
+      .finally(() => setLoading(false));
+  }, [period]);
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+        <h3 className="font-semibold text-gray-900">Top 5 Earnings of Sub IBs</h3>
+        <div className="flex gap-1">
+          {(["all", "yearly", "monthly", "weekly"] as const).map((p) => (
+            <button key={p} onClick={() => setPeriod(p)}
+              className={`px-3 py-1 text-xs font-medium rounded-lg capitalize transition-colors ${period === p ? "bg-sky-500 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+      {loading ? (
+        <div className="p-8 text-center text-gray-400 text-sm">Loading...</div>
+      ) : topIBs.length === 0 ? (
+        <div className="p-8 text-center text-gray-400 text-sm">No data yet!</div>
+      ) : (
+        <div className="divide-y divide-gray-50">
+          {topIBs.map((ib, i) => (
+            <div key={ib.email} className="px-4 py-3 flex items-center gap-3">
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? "bg-amber-100 text-amber-700" : i === 1 ? "bg-gray-100 text-gray-600" : "bg-orange-50 text-orange-600"}`}>{i + 1}</span>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">{ib.name}</p>
+                <p className="text-xs text-gray-400">{ib.email}</p>
+              </div>
+              <span className="text-sm font-bold text-emerald-600">${ib.earnings.toFixed(2)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

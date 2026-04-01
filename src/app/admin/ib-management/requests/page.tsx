@@ -14,6 +14,8 @@ interface IBRequestItem {
   status: string;
   adminComment: string | null;
   reviewedAt: string | null;
+  reviewedById: string | null;
+  reviewedByRole: string | null;
   createdAt: string;
   user: {
     id: string;
@@ -25,6 +27,7 @@ interface IBRequestItem {
     status: string;
     kycStatus: string;
     isIB: boolean;
+    ibParent?: { id: string; name: string } | null;
   };
 }
 

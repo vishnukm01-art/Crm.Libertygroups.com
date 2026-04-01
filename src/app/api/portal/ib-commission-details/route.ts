@@ -25,11 +25,26 @@ export async function GET(request: NextRequest) {
       orderBy: { level: "asc" },
     });
 
-    // Get commission-related audit logs as earning history
+    // Get commission assignments (what parent allocated to this IB)
+    const assignments = await prisma.iBCommissionAssignment.findMany({
+      where: { childIBId: userId },
+    });
+
+    // Get commission ledger entries (actual earned commissions)
     const dateFilter: Record<string, unknown> = {};
     if (from) dateFilter.gte = new Date(from);
     if (to) dateFilter.lte = new Date(to + "T23:59:59.999Z");
 
+    const ledgerEntries = await prisma.commissionLedger.findMany({
+      where: {
+        ibUserId: userId,
+        ...(from || to ? { createdAt: dateFilter } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+
+    // Get commission-related audit logs as earning history
     const auditLogs = await prisma.auditLog.findMany({
       where: {
         adminId: userId,
@@ -52,11 +67,24 @@ export async function GET(request: NextRequest) {
 
     const totalWithdrawn = ibWithdrawals.reduce((s, t) => s + t.amount, 0);
 
+    // Aggregate ledger by group
+    const groupSummary: Record<string, { totalLots: number; totalCommission: number; tradeCount: number }> = {};
+    ledgerEntries.forEach((e) => {
+      const g = e.groupName || "Unknown";
+      if (!groupSummary[g]) groupSummary[g] = { totalLots: 0, totalCommission: 0, tradeCount: 0 };
+      groupSummary[g].totalLots += e.lotsTraded;
+      groupSummary[g].totalCommission += e.totalCommission;
+      groupSummary[g].tradeCount++;
+    });
+
     return NextResponse.json({
       totalCommission: user.totalCommission,
       availableCommission: user.availableCommission,
       totalWithdrawn,
       commissionConfig,
+      assignments,
+      ledger: ledgerEntries,
+      groupSummary,
       history: auditLogs,
     });
   } catch (error) {

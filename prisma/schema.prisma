@@ -139,15 +139,58 @@ model IBCommission {
 }
 
 model IBRequest {
-  id           String    @id @default(cuid())
-  userId       String
-  user         User      @relation(fields: [userId], references: [id])
-  reason       String?
-  status       String    @default("pending") // pending, approved, rejected
-  adminComment String?
-  reviewedAt   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  reason         String?
+  status         String    @default("pending") // pending, approved, rejected
+  adminComment   String?
+  reviewedById   String?
+  reviewedByRole String?   // admin, ib, master_ib
+  reviewedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+// MT5 group-based commission ceilings (Smart=7, Elite=14, Prime=21, Royal=30)
+model GroupCommissionCeiling {
+  id            String   @id @default(cuid())
+  groupName     String   @unique
+  ceilingPerLot Float    // Max commission per lot for this group
+  description   String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Parent IB allocates commission rate to child IB per group
+model IBCommissionAssignment {
+  id          String   @id @default(cuid())
+  parentIBId  String
+  childIBId   String
+  groupName   String
+  valuePerLot Float    // Commission per lot allocated to child
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([parentIBId, childIBId, groupName])
+}
+
+// Ledger tracking commission distributions per trade
+model CommissionLedger {
+  id              String   @id @default(cuid())
+  ibUserId        String   // IB who received commission
+  tradeId         String?  // External MT5 trade ID
+  mt5Login        String?  // MT5 account that traded
+  groupName       String?  // Trading group
+  lotsTraded      Float    @default(0)
+  commissionRate  Float    @default(0)  // Per-lot rate for this IB
+  totalCommission Float    @default(0)  // lotsTraded * commissionRate
+  level           Int      @default(1)  // IB level in hierarchy
+  type            String   @default("earned") // earned, retained
+  sourceUserId    String?  // The trading user who generated the commission
+  processedAt     DateTime @default(now())
+  createdAt       DateTime @default(now())
 }
 
 model Group {
