@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { type Uploadable } from "openai/uploads";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || "" });
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
