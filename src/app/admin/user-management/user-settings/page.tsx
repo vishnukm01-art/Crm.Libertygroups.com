@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PageShell from "@/components/PageShell";
 import { Settings, Save, ArrowLeft } from "lucide-react";
 
-export default function UserSettingsPage() {
+function UserSettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userId = searchParams.get("user") || "";
@@ -50,9 +50,7 @@ export default function UserSettingsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSaving(true);
-    setError("");
-    setSuccess("");
+    setSaving(true); setError(""); setSuccess("");
     try {
       const res = await fetch(`/api/users/${userId}`, {
         method: "PATCH",
@@ -78,14 +76,12 @@ export default function UserSettingsPage() {
   };
 
   return (
-    <PageShell title="Change User Setting" description={`Settings for ${userName}`} icon={Settings}>
+    <>
       <button onClick={() => router.back()} className="mb-4 flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700">
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
-
       {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">{error}</div>}
       {success && <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700">{success}</div>}
-
       {loading ? (
         <div className="flex items-center justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-500 border-t-transparent" /></div>
       ) : (
@@ -113,6 +109,16 @@ export default function UserSettingsPage() {
           </button>
         </form>
       )}
+    </>
+  );
+}
+
+export default function UserSettingsPage() {
+  return (
+    <PageShell title="Change User Setting" description="Manage user feature access" icon={Settings}>
+      <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-500 border-t-transparent" /></div>}>
+        <UserSettingsContent />
+      </Suspense>
     </PageShell>
   );
 }
