@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import PageShell from "@/components/PageShell";
-import { Layers, RefreshCw, Pencil, Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Layers, Pencil, Download, Search, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Group {
   id: string;
@@ -18,24 +18,22 @@ interface Group {
 export default function GroupListPage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
 
-  const fetchGroups = async (sync = false) => {
+  const fetchGroups = async () => {
     try {
-      if (sync) setSyncing(true); else setLoading(true);
+      setLoading(true);
       setError("");
-      const url = sync ? "/api/admin/groups?sync=true" : "/api/admin/groups";
-      const res = await fetch(url);
+      const res = await fetch("/api/admin/groups");
       if (!res.ok) throw new Error("Failed to fetch groups");
       const data = await res.json();
       setGroups(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load groups");
-    } finally { setLoading(false); setSyncing(false); }
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { fetchGroups(); }, []);
@@ -60,11 +58,6 @@ export default function GroupListPage() {
   return (
     <PageShell title="Group List" description="Manage trading groups" icon={Layers}>
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <button onClick={() => fetchGroups(true)} disabled={syncing}
-          className="btn-secondary flex items-center gap-2 text-sm">
-          <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
-          {syncing ? "Syncing from MT5..." : "Sync from MT5"}
-        </button>
         <a href="/admin/group-management/add" className="btn-primary text-sm">+ Add Group</a>
       </div>
 

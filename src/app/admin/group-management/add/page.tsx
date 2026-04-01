@@ -24,6 +24,25 @@ export default function AddGroupPage() {
 
     setSubmitting(true);
     try {
+      // Step 1: Validate MT5 group exists in MT5 Admin
+      const mt5Res = await fetch("/api/mt5/groups");
+      if (mt5Res.ok) {
+        const mt5Groups = await mt5Res.json();
+        const mt5List = Array.isArray(mt5Groups) ? mt5Groups : [];
+        const exists = mt5List.some(
+          (g: { name: string }) =>
+            g.name.toLowerCase() === mt5GroupName.trim().toLowerCase()
+        );
+        if (!exists) {
+          setError(
+            `MT5 Group "${mt5GroupName.trim()}" does not exist in MT5 Admin. Please enter a valid MT5 Group Name.`
+          );
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // Step 2: Create group in CRM
       const res = await fetch("/api/admin/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

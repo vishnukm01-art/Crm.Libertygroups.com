@@ -52,12 +52,12 @@ export default function SetIBCommissionPage() {
       const [ib, comm, grp, ceil] = await Promise.all([
         fetch("/api/ib/users").then((r) => r.ok ? r.json() : []),
         fetch("/api/ib/commission").then((r) => r.ok ? r.json() : []),
-        fetch("/api/mt5/groups").then((r) => r.ok ? r.json() : []),
+        fetch("/api/admin/groups?managedOnly=true").then((r) => r.ok ? r.json() : []),
         fetch("/api/admin/group-ceilings").then((r) => r.ok ? r.json() : []),
       ]);
       setIbUsers(ib.map((u: IBUser) => ({ id: u.id, name: u.name, email: u.email })));
       setCommissions(comm);
-      setGroups(grp.map((g: { name: string }) => ({ id: g.name, name: g.name })));
+      setGroups(grp.filter((g: { isActive: boolean }) => g.isActive).map((g: { name: string; description?: string }) => ({ id: g.name, name: g.name })));
       setCeilings(ceil);
     } catch { /* ignore */ } finally { setLoading(false); }
   };
