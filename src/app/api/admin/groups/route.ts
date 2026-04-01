@@ -26,13 +26,16 @@ export async function GET(request: NextRequest) {
               name: g.name,
               description: g.description || null,
               isActive: true,
+              source: "sync",
             },
           });
         }
       }
     }
 
+    const managedOnly = request.nextUrl.searchParams.get("managedOnly") === "true";
     const groups = await prisma.group.findMany({
+      where: managedOnly ? { source: "manual", isActive: true } : undefined,
       orderBy: { createdAt: "desc" },
     });
 
@@ -104,6 +107,7 @@ export async function POST(request: NextRequest) {
         leverage: leverage || null,
         commission: commission ? parseFloat(commission) : null,
         isActive: true,
+        source: "manual",
       },
     });
 

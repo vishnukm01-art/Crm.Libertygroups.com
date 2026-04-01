@@ -58,7 +58,7 @@ export default function MT5AccountForm({ userId, onSuccess }: MT5AccountFormProp
 
   const fetchGroups = async () => {
     try {
-      const res = await fetch("/api/admin/groups");
+      const res = await fetch("/api/admin/groups?managedOnly=true");
       if (res.ok) {
         const data = await res.json();
         // Only show active groups from Group Management

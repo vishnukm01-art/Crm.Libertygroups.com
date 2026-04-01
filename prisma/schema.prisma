@@ -200,6 +200,7 @@ model Group {
   leverage    String?
   commission  Float?
   isActive    Boolean  @default(true)
+  source      String   @default("sync") // "manual" = created via Add Group, "sync" = synced from MT5
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

@@ -77,6 +77,7 @@ export const navigationItems: NavigationItem[] = [
     children: [
       { name: "Group List", href: "/admin/group-management/list", icon: "List" },
       { name: "Add Group", href: "/admin/group-management/add", icon: "Plus" },
+      { name: "Update MT5 Group", href: "/admin/group-management/update-mt5-group", icon: "RefreshCw" },
       { name: "Leverage Settings", href: "/admin/group-management/leverage", icon: "Sliders" },
     ],
   },
