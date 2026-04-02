@@ -1497,12 +1497,12 @@ public class MT5Service : IMT5Service, IDisposable
         try
         {
             var order = GetProperty<ulong>(dealObj, "Deal");
-            var orderStr = order?.ToString() ?? GetProperty<string>(dealObj, "Order") ?? "";
+            var orderStr = order > 0 ? order.ToString() : (GetProperty<string>(dealObj, "Order") ?? "");
             var loginVal = GetProperty<ulong>(dealObj, "Login");
-            var loginStr = loginVal?.ToString() ?? fallbackLogin.ToString();
+            var loginStr = loginVal > 0 ? loginVal.ToString() : fallbackLogin.ToString();
             var symbol = GetProperty<string>(dealObj, "Symbol") ?? "";
 
-            var actionVal = GetProperty<uint>(dealObj, "Action") ?? 0u;
+            var actionVal = GetProperty<uint>(dealObj, "Action");
             string actionStr;
             switch (actionVal)
             {
@@ -1516,28 +1516,28 @@ public class MT5Service : IMT5Service, IDisposable
             var volumeExt = GetProperty<ulong>(dealObj, "VolumeExt");
             var volumeRaw = GetProperty<ulong>(dealObj, "Volume");
             double volume;
-            if (volumeExt.HasValue && volumeExt.Value > 0) volume = volumeExt.Value / 10000.0;
-            else if (volumeRaw.HasValue && volumeRaw.Value > 0) volume = volumeRaw.Value / 100.0;
+            if (volumeExt > 0) volume = volumeExt / 10000.0;
+            else if (volumeRaw > 0) volume = volumeRaw / 100.0;
             else volume = 0;
             if (volume == 0)
             {
                 var vd = GetProperty<double>(dealObj, "Volume");
-                if (vd.HasValue && vd.Value > 0) volume = vd.Value;
+                if (vd > 0) volume = vd;
             }
 
-            var price = GetProperty<double>(dealObj, "Price") ?? 0.0;
-            var profit = GetProperty<double>(dealObj, "Profit") ?? 0.0;
-            var commission = GetProperty<double>(dealObj, "Commission") ?? 0.0;
+            var price = GetProperty<double>(dealObj, "Price");
+            var profit = GetProperty<double>(dealObj, "Profit");
+            var commission = GetProperty<double>(dealObj, "Commission");
 
             var timeMsc = GetProperty<long>(dealObj, "TimeMsc");
             var timeVal = GetProperty<long>(dealObj, "Time");
             string timeStr = "";
-            if (timeMsc.HasValue && timeMsc.Value > 0)
-                timeStr = DateTimeOffset.FromUnixTimeMilliseconds(timeMsc.Value).ToString("yyyy-MM-dd HH:mm:ss");
-            else if (timeVal.HasValue && timeVal.Value > 0)
-                timeStr = DateTimeOffset.FromUnixTimeSeconds(timeVal.Value).ToString("yyyy-MM-dd HH:mm:ss");
+            if (timeMsc > 0)
+                timeStr = DateTimeOffset.FromUnixTimeMilliseconds(timeMsc).ToString("yyyy-MM-dd HH:mm:ss");
+            else if (timeVal > 0)
+                timeStr = DateTimeOffset.FromUnixTimeSeconds(timeVal).ToString("yyyy-MM-dd HH:mm:ss");
 
-            var positionId = GetProperty<ulong>(dealObj, "PositionID") ?? 0UL;
+            var positionId = GetProperty<ulong>(dealObj, "PositionID");
 
             return new TradeRecord
             {
@@ -1789,26 +1789,47 @@ if (Test-Path $csproj) {
 
 # Build
 Write-Host "[3/5] Building..." -ForegroundColor Yellow
-dotnet publish $csproj -c Release -r win-x64 --self-contained true -o $outDir
+$buildOutput = dotnet publish $csproj -c Release -r win-x64 --self-contained true -o $outDir 2>&1
+$buildOutput | Write-Host
+# Check for actual build errors (not just warnings)
+$buildErrors = $buildOutput | Select-String ": error CS"
+if ($buildErrors) {
+    Write-Host "  Build FAILED with errors!" -ForegroundColor Red
+    exit 1
+}
 if (-not (Test-Path "$outDir\MT5Bridge.exe")) {
-    Write-Host "  Build FAILED!" -ForegroundColor Red
+    Write-Host "  Build FAILED - exe not found!" -ForegroundColor Red
     exit 1
 }
 Write-Host "  Build OK" -ForegroundColor Green
 
 # Copy SDK DLLs
 Write-Host "[4/5] Copying SDK DLLs..." -ForegroundColor Yellow
-Copy-Item "$sdkDir\*.dll" "$outDir\" -Force
+Copy-Item "$sdkDir\*.dll" "$outDir\" -Force -ErrorAction SilentlyContinue
 Write-Host "  Done" -ForegroundColor Green
 
 # Copy appsettings
 Copy-Item "$srcDir\appsettings.json" "$outDir\appsettings.json" -Force
 
-# Start in console mode for testing (not as service)
-Write-Host "[5/5] Starting bridge in console mode..." -ForegroundColor Yellow
-Write-Host "  Bridge will start. After 15 seconds, test with:" -ForegroundColor Gray
-Write-Host '  curl.exe -k https://localhost:6680/api/debug/methods' -ForegroundColor Gray
-Write-Host '  curl.exe -k -H "X-API-Key: f8f8e64d67606818da38b3d160bfbf634da336ddb25932bb554a945f2d62de0f" https://localhost:6680/api/group/getall' -ForegroundColor Gray
-Write-Host ""
-
-& "$outDir\MT5Bridge.exe"
+# Start as Windows service (or console mode if service not installed)
+Write-Host "[5/5] Starting bridge..." -ForegroundColor Yellow
+$svc = Get-Service -Name "MT5Bridge" -ErrorAction SilentlyContinue
+if ($svc) {
+    sc.exe start MT5Bridge
+    Start-Sleep -Seconds 10
+    Write-Host "  Service started. Testing health..." -ForegroundColor Green
+    try {
+        $health = curl.exe -sk "https://localhost:6680/api/health" 2>$null
+        Write-Host "  Health: $health" -ForegroundColor Green
+    } catch {
+        Write-Host "  Health check pending (service may still be connecting)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  No Windows service found. Starting in console mode..." -ForegroundColor Yellow
+    Write-Host "  After 15 seconds, test with:" -ForegroundColor Gray
+    Write-Host '  curl.exe -k https://localhost:6680/api/health' -ForegroundColor Gray
+    Write-Host ""
+    Push-Location $outDir
+    & "$outDir\MT5Bridge.exe"
+    Pop-Location
+}

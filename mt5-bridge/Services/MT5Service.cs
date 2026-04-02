@@ -1168,15 +1168,15 @@ public class MT5Service : IMT5Service, IDisposable
             //   Time() -> long (unix timestamp), TimeMsc() -> long (ms timestamp)
 
             var order = GetProperty<ulong>(dealObj, "Deal");
-            var orderStr = order?.ToString() ?? GetProperty<string>(dealObj, "Order") ?? "";
+            var orderStr = order > 0 ? order.ToString() : (GetProperty<string>(dealObj, "Order") ?? "");
 
             var loginVal = GetProperty<ulong>(dealObj, "Login");
-            var loginStr = loginVal?.ToString() ?? fallbackLogin.ToString();
+            var loginStr = loginVal > 0 ? loginVal.ToString() : fallbackLogin.ToString();
 
             var symbol = GetProperty<string>(dealObj, "Symbol") ?? "";
 
             // Action: 0=buy, 1=sell, 2=balance, 3=credit, etc.
-            var actionVal = GetProperty<uint>(dealObj, "Action") ?? 0u;
+            var actionVal = GetProperty<uint>(dealObj, "Action");
             string actionStr;
             switch (actionVal)
             {
@@ -1192,10 +1192,10 @@ public class MT5Service : IMT5Service, IDisposable
             var volumeExt = GetProperty<ulong>(dealObj, "VolumeExt");
             var volumeRaw = GetProperty<ulong>(dealObj, "Volume");
             double volume;
-            if (volumeExt.HasValue && volumeExt.Value > 0)
-                volume = volumeExt.Value / 10000.0;
-            else if (volumeRaw.HasValue && volumeRaw.Value > 0)
-                volume = volumeRaw.Value / 100.0;
+            if (volumeExt > 0)
+                volume = volumeExt / 10000.0;
+            else if (volumeRaw > 0)
+                volume = volumeRaw / 100.0;
             else
                 volume = 0;
 
@@ -1203,28 +1203,28 @@ public class MT5Service : IMT5Service, IDisposable
             if (volume == 0)
             {
                 var volumeDouble = GetProperty<double>(dealObj, "Volume");
-                if (volumeDouble.HasValue && volumeDouble.Value > 0)
-                    volume = volumeDouble.Value;
+                if (volumeDouble > 0)
+                    volume = volumeDouble;
             }
 
-            var price = GetProperty<double>(dealObj, "Price") ?? 0.0;
-            var profit = GetProperty<double>(dealObj, "Profit") ?? 0.0;
-            var commission = GetProperty<double>(dealObj, "Commission") ?? 0.0;
+            var price = GetProperty<double>(dealObj, "Price");
+            var profit = GetProperty<double>(dealObj, "Profit");
+            var commission = GetProperty<double>(dealObj, "Commission");
 
             // Time: prefer TimeMsc (milliseconds), fall back to Time (seconds)
             var timeMsc = GetProperty<long>(dealObj, "TimeMsc");
             var timeVal = GetProperty<long>(dealObj, "Time");
             string timeStr = "";
-            if (timeMsc.HasValue && timeMsc.Value > 0)
+            if (timeMsc > 0)
             {
-                timeStr = DateTimeOffset.FromUnixTimeMilliseconds(timeMsc.Value).ToString("yyyy-MM-dd HH:mm:ss");
+                timeStr = DateTimeOffset.FromUnixTimeMilliseconds(timeMsc).ToString("yyyy-MM-dd HH:mm:ss");
             }
-            else if (timeVal.HasValue && timeVal.Value > 0)
+            else if (timeVal > 0)
             {
-                timeStr = DateTimeOffset.FromUnixTimeSeconds(timeVal.Value).ToString("yyyy-MM-dd HH:mm:ss");
+                timeStr = DateTimeOffset.FromUnixTimeSeconds(timeVal).ToString("yyyy-MM-dd HH:mm:ss");
             }
 
-            var positionId = GetProperty<ulong>(dealObj, "PositionID") ?? 0UL;
+            var positionId = GetProperty<ulong>(dealObj, "PositionID");
 
             return new TradeRecord
             {
