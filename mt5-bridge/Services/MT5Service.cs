@@ -1281,15 +1281,19 @@ public class MT5Service : IMT5Service, IDisposable
                 default: actionStr = actionVal.ToString(); break;
             }
 
-            // Volume: MT5 stores volume in hundredths of a lot (e.g., 100 = 0.01 lot)
-            // VolumeExt stores in ten-thousandths. Try VolumeExt first for precision.
+            // Volume: MT5 Manager API stores volume as:
+            //   Volume()    -> ulong, lots × 10^2  (e.g., 100 = 1.00 lot)
+            //   VolumeExt() -> ulong, lots × 10^8  (e.g., 100000000 = 1.00 lot)
+            // Prefer Volume (well-documented, reliable) over VolumeExt.
             var volumeExt = GetProperty<ulong>(dealObj, "VolumeExt");
             var volumeRaw = GetProperty<ulong>(dealObj, "Volume");
             double volume;
-            if (volumeExt > 0)
-                volume = volumeExt / 10000.0;
-            else if (volumeRaw > 0)
-                volume = volumeRaw / 100.0;
+            double fromVolume = volumeRaw > 0 ? volumeRaw / 100.0 : 0;
+            double fromVolumeExt = volumeExt > 0 ? volumeExt / 100_000_000.0 : 0;
+            if (fromVolume > 0)
+                volume = fromVolume;
+            else if (fromVolumeExt > 0)
+                volume = fromVolumeExt;
             else
                 volume = 0;
 
@@ -1333,6 +1337,8 @@ public class MT5Service : IMT5Service, IDisposable
                 Commission = commission,
                 OpenTime = timeStr,
                 CloseTime = timeStr,
+                VolumeExtRaw = volumeExt,
+                VolumeRaw = volumeRaw,
             };
         }
         catch (Exception ex)

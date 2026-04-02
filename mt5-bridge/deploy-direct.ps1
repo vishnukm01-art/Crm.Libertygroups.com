@@ -327,6 +327,9 @@ public class TradeRecord
     public double Commission { get; set; }
     public string OpenTime { get; set; } = "";
     public string CloseTime { get; set; } = "";
+    // Diagnostics: raw volume values from MT5 for verification
+    public ulong VolumeExtRaw { get; set; }
+    public ulong VolumeRaw { get; set; }
 }
 
 public class BalanceResponse
@@ -1616,8 +1619,13 @@ public class MT5Service : IMT5Service, IDisposable
             var volumeExt = GetProperty<ulong>(dealObj, "VolumeExt");
             var volumeRaw = GetProperty<ulong>(dealObj, "Volume");
             double volume;
-            if (volumeExt > 0) volume = volumeExt / 10000.0;
-            else if (volumeRaw > 0) volume = volumeRaw / 100.0;
+            // Volume()    -> ulong, lots × 10^2  (e.g., 100 = 1.00 lot)
+            // VolumeExt() -> ulong, lots × 10^8  (e.g., 100000000 = 1.00 lot)
+            // Prefer Volume (well-documented) over VolumeExt.
+            double fromVolume = volumeRaw > 0 ? volumeRaw / 100.0 : 0;
+            double fromVolumeExt = volumeExt > 0 ? volumeExt / 100_000_000.0 : 0;
+            if (fromVolume > 0) volume = fromVolume;
+            else if (fromVolumeExt > 0) volume = fromVolumeExt;
             else volume = 0;
             if (volume == 0)
             {
@@ -1646,6 +1654,7 @@ public class MT5Service : IMT5Service, IDisposable
                 Volume = volume, OpenPrice = price, ClosePrice = price,
                 Profit = profit, Commission = commission,
                 OpenTime = timeStr, CloseTime = timeStr,
+                VolumeExtRaw = volumeExt, VolumeRaw = volumeRaw,
             };
         }
         catch (Exception ex) { _logger.LogWarning(ex, "ExtractDealInfo failed for {Type}", dealObj?.GetType().Name); }

@@ -60,6 +60,9 @@ public class TradeRecord
     public double Commission { get; set; }
     public string OpenTime { get; set; } = "";
     public string CloseTime { get; set; } = "";
+    // Diagnostics: raw volume values from MT5 for verification
+    public ulong VolumeExtRaw { get; set; }
+    public ulong VolumeRaw { get; set; }
 }
 
 public class BalanceResponse
