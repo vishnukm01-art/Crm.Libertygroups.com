@@ -3,7 +3,15 @@
 import { useState, useEffect } from "react";
 import { TrendingUp, Search, Clock } from "lucide-react";
 
-interface Deal { Order?: number; Symbol?: string; Action?: string; Volume?: number; Price?: number; Profit?: number; Time?: string; PositionID?: number; [key: string]: unknown; }
+interface Deal {
+  order?: string; symbol?: string; action?: string; volume?: number;
+  openPrice?: number; closePrice?: number; profit?: number; commission?: number;
+  openTime?: string; closeTime?: string; login?: string;
+  // Also handle PascalCase from bridge
+  Order?: string; Symbol?: string; Action?: string; Volume?: number;
+  Price?: number; Profit?: number; PositionID?: number;
+  [key: string]: unknown;
+}
 
 export default function DealReportPage() {
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -22,8 +30,15 @@ export default function DealReportPage() {
   useEffect(() => { fetchData(from, to); }, []);
   const handleSearch = () => { setLoading(true); fetchData(from, to); };
 
-  const totalProfit = deals.reduce((s, d) => s + (d.Profit || 0), 0);
-  const totalVolume = deals.reduce((s, d) => s + (d.Volume || 0), 0);
+  const getProfit = (d: Deal) => d.profit ?? d.Profit ?? 0;
+  const getVolume = (d: Deal) => d.volume ?? d.Volume ?? 0;
+  const getOrder = (d: Deal) => d.order ?? d.Order ?? "-";
+  const getSymbol = (d: Deal) => d.symbol ?? d.Symbol ?? "-";
+  const getAction = (d: Deal) => d.action ?? d.Action ?? "-";
+  const getPrice = (d: Deal) => d.openPrice ?? d.Price ?? 0;
+
+  const totalProfit = deals.reduce((s, d) => s + getProfit(d), 0);
+  const totalVolume = deals.reduce((s, d) => s + getVolume(d), 0);
 
   if (loading) return <div className="flex items-center justify-center h-48"><div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-500 border-t-transparent" /></div>;
 
@@ -59,13 +74,13 @@ export default function DealReportPage() {
             <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Position ID</th>
           </tr></thead><tbody>
             {deals.map((d, i) => (<tr key={i} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
-              <td className="px-4 py-3 text-gray-700 text-xs">{d.Order || "-"}</td>
-              <td className="px-4 py-3 text-gray-900 font-medium">{d.Symbol || "-"}</td>
-              <td className="px-4 py-3 text-gray-700">{d.Action || "-"}</td>
-              <td className="px-4 py-3 text-gray-700">{d.Volume || "-"}</td>
-              <td className="px-4 py-3 text-gray-700">{d.Price || "-"}</td>
-              <td className={`px-4 py-3 font-medium ${(d.Profit || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>${(d.Profit || 0).toFixed(2)}</td>
-              <td className="px-4 py-3 text-gray-500 text-xs">{d.PositionID || "-"}</td>
+              <td className="px-4 py-3 text-gray-700 text-xs">{getOrder(d)}</td>
+              <td className="px-4 py-3 text-gray-900 font-medium">{getSymbol(d)}</td>
+              <td className="px-4 py-3 text-gray-700">{getAction(d)}</td>
+              <td className="px-4 py-3 text-gray-700">{getVolume(d) || "-"}</td>
+              <td className="px-4 py-3 text-gray-700">{getPrice(d) || "-"}</td>
+              <td className={`px-4 py-3 font-medium ${getProfit(d) >= 0 ? "text-emerald-600" : "text-red-600"}`}>${getProfit(d).toFixed(2)}</td>
+              <td className="px-4 py-3 text-gray-500 text-xs">{d.openTime ? new Date(d.openTime).toLocaleString() : (d.PositionID || "-")}</td>
             </tr>))}
           </tbody></table></div>
         )}

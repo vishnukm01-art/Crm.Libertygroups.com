@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
 
 export const dynamic = "force-dynamic";
@@ -79,11 +77,11 @@ export async function POST(request: NextRequest) {
 
     let proofFilePath: string | null = null;
 
-    // Handle file upload
+    // Handle file upload — store as base64 data URL for serverless compatibility
     if (file && file.size > 0) {
-      const maxSize = 10 * 1024 * 1024; // 10MB
+      const maxSize = 5 * 1024 * 1024; // 5MB for base64 storage
       if (file.size > maxSize) {
-        return NextResponse.json({ error: "File size must be less than 10MB" }, { status: 400 });
+        return NextResponse.json({ error: "File size must be less than 5MB" }, { status: 400 });
       }
 
       const allowedTypes = [
@@ -97,17 +95,9 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const uploadDir = path.join(process.cwd(), "public", "uploads", "deposits", userId);
-      await mkdir(uploadDir, { recursive: true });
-
-      const ext = path.extname(file.name) || ".png";
-      const safeFileName = `${Date.now()}-deposit${ext}`;
-      const filePath = path.join(uploadDir, safeFileName);
-
       const bytes = await file.arrayBuffer();
-      await writeFile(filePath, Buffer.from(bytes));
-
-      proofFilePath = `/uploads/deposits/${userId}/${safeFileName}`;
+      const base64 = Buffer.from(bytes).toString("base64");
+      proofFilePath = `data:${file.type};base64,${base64}`;
     }
 
     // Create transaction record

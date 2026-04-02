@@ -146,6 +146,24 @@ let lastBridgeHealthCheck: { connected: boolean; lastKeepalive?: string } | null
 const REQUEST_TIMEOUT_MS = 15000;
 
 /**
+ * Normalize PascalCase keys from .NET bridge to camelCase.
+ * Handles nested objects and arrays.
+ */
+function normalizeBridgeResponse<T>(data: unknown): T {
+  if (data === null || data === undefined) return data as T;
+  if (Array.isArray(data)) return data.map((item) => normalizeBridgeResponse(item)) as T;
+  if (typeof data === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+      const camelKey = key.charAt(0).toLowerCase() + key.slice(1);
+      result[camelKey] = typeof value === "object" ? normalizeBridgeResponse(value) : value;
+    }
+    return result as T;
+  }
+  return data as T;
+}
+
+/**
  * Make a request to the MT5 Bridge service.
  * The bridge handles Manager API authentication and session management internally.
  */
@@ -322,7 +340,7 @@ export async function mt5CreateAccount(params: MT5CreateAccountParams): Promise<
   if (MT5_CONFIG.mode === "mock") {
     return { success: true, data: generateMockAccount(params) };
   }
-  return bridgeRequest<MT5Account>("/api/user/add", "POST", {
+  const result = await bridgeRequest<MT5Account>("/api/user/add", "POST", {
     Name: params.name,
     Email: params.email,
     Group: params.group,
@@ -331,6 +349,12 @@ export async function mt5CreateAccount(params: MT5CreateAccountParams): Promise<
     Phone: params.phone || "",
     Country: params.country || "",
   });
+  // Normalize PascalCase bridge response to camelCase
+  if (result.success && result.data) {
+    result.data = normalizeBridgeResponse<MT5Account>(result.data);
+    result.data.login = String(result.data.login || "");
+  }
+  return result;
 }
 
 export async function mt5GetAccount(login: string): Promise<MT5Result<MT5Account>> {
@@ -351,7 +375,19 @@ export async function mt5GetAccount(login: string): Promise<MT5Result<MT5Account
       },
     };
   }
-  return bridgeRequest<MT5Account>(`/api/user/get?login=${login}`);
+  const result = await bridgeRequest<MT5Account>(`/api/user/get?login=${login}`);
+  // Normalize PascalCase bridge response to camelCase
+  if (result.success && result.data) {
+    result.data = normalizeBridgeResponse<MT5Account>(result.data);
+    // Ensure login is a string
+    result.data.login = String(result.data.login || login);
+    // Ensure numeric fields are numbers
+    result.data.balance = Number(result.data.balance) || 0;
+    result.data.equity = Number(result.data.equity) || 0;
+    result.data.margin = Number(result.data.margin) || 0;
+    result.data.freeMargin = Number(result.data.freeMargin) || 0;
+  }
+  return result;
 }
 
 export async function mt5ChangePassword(login: string, newPassword: string, type: "main" | "investor" = "main"): Promise<MT5Result<{ success: boolean }>> {
@@ -416,7 +452,12 @@ export async function mt5GetTrades(login: string, from?: string, to?: string): P
   const params = new URLSearchParams({ login });
   if (from) params.set("from", from);
   if (to) params.set("to", to);
-  return bridgeRequest<MT5TradeRecord[]>(`/api/history/get?${params.toString()}`);
+  const result = await bridgeRequest<MT5TradeRecord[]>(`/api/history/get?${params.toString()}`);
+  // Normalize PascalCase bridge response to camelCase
+  if (result.success && result.data) {
+    result.data = normalizeBridgeResponse<MT5TradeRecord[]>(result.data);
+  }
+  return result;
 }
 
 export async function mt5GetOpenPositions(login: string): Promise<MT5Result<MT5TradeRecord[]>> {
