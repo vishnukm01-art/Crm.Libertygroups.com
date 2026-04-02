@@ -690,23 +690,39 @@ public class MT5Service : IMT5Service, IDisposable
                                 var total = Convert.ToUInt32(totalMethod.Invoke(dealArray, null) ?? 0u);
                                 diag.Add($"Deal array total: {total}");
 
+                                var allExtracted = new List<TradeRecord>();
+                                int nullCount = 0;
+                                var sampleLogins = new List<string>();
+
                                 for (uint i = 0; i < total; i++)
                                 {
                                     try
                                     {
                                         var dealObj = nextMethod.Invoke(dealArray, new object[] { i });
-                                        if (dealObj == null) continue;
+                                        if (dealObj == null) { nullCount++; continue; }
 
                                         var trade = ExtractDealInfo(dealObj, login);
-                                        if (trade == null) continue;
-                                        // Filter by login (DealRequestByGroup returns all logins)
-                                        if (trade.Login == login.ToString() || login == 0)
+                                        if (trade == null) { nullCount++; continue; }
+
+                                        allExtracted.Add(trade);
+                                        if (sampleLogins.Count < 5 && !sampleLogins.Contains(trade.Login))
+                                            sampleLogins.Add(trade.Login);
+                                        if (trade.Login == login.ToString())
                                             trades.Add(trade);
                                     }
                                     catch (Exception ex)
                                     {
                                         diag.Add($"Deal[{i}] extract error: {ex.InnerException?.Message ?? ex.Message}");
                                     }
+                                }
+
+                                diag.Add($"Extraction: null={nullCount}, extracted={allExtracted.Count}, loginMatch={trades.Count}, sampleLogins=[{string.Join(",", sampleLogins)}]");
+
+                                // If login filter produced 0 but we have extracted deals, return all
+                                if (trades.Count == 0 && allExtracted.Count > 0)
+                                {
+                                    _logger.LogInformation("GetHistory: Login filter matched 0/{Count} deals. Returning all.", allExtracted.Count);
+                                    trades = allExtracted;
                                 }
 
                                 if (trades.Count > 0)

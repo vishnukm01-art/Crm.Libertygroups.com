@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { mt5GetTrades } from "@/lib/mt5";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +34,55 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    return NextResponse.json(deposits);
+    // Fetch MT5 balance operations (deposits made via MT5 Admin)
+    const mt5Accounts = await prisma.mt5Account.findMany({
+      where: { userId },
+      select: { mt5Login: true },
+    });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { mt5Account: true },
+    });
+    const allLogins = mt5Accounts.map((a) => a.mt5Login);
+    if (user?.mt5Account && !allLogins.includes(user.mt5Account)) {
+      allLogins.push(user.mt5Account);
+    }
+
+    let mt5Deposits: typeof deposits = [];
+    try {
+      const allDeals = await Promise.all(
+        allLogins.map(async (login) => {
+          const result = await mt5GetTrades(login, from || undefined, to || undefined);
+          return result.data || [];
+        })
+      );
+      for (const deal of allDeals.flat()) {
+        const action = (deal.action || "").toLowerCase();
+        if ((action === "balance" || action === "2") && (deal.profit || 0) > 0) {
+          mt5Deposits.push({
+            id: `mt5-${deal.order || Date.now()}`,
+            amount: deal.profit || 0,
+            currency: "USD",
+            status: "completed",
+            paymentMethod: "MT5 Admin",
+            reference: `MT5-${deal.order || ""}`,
+            notes: null,
+            proofFilePath: null,
+            adminComment: "Direct MT5 balance operation",
+            createdAt: deal.openTime || new Date().toISOString(),
+          });
+        }
+      }
+    } catch {
+      // MT5 unavailable, just show CRM deposits
+    }
+
+    // Merge CRM deposits + MT5 deposits, sorted by date descending
+    const allDeposits = [...deposits, ...mt5Deposits].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return NextResponse.json(allDeposits);
   } catch (error) {
     console.error("Fetch deposits error:", error);
     return NextResponse.json({ error: "Failed to fetch deposits" }, { status: 500 });
