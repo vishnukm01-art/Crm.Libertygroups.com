@@ -72,7 +72,7 @@ export default function PortalProfilePage() {
       setLoading(false);
     }
     // Fetch CRM-managed groups for Create MT5 Account modal
-    fetch("/api/admin/groups?managedOnly=true")
+    fetch("/api/portal/groups")
       .then((r) => r.ok ? r.json() : [])
       .then((groups) => setMt5Groups(Array.isArray(groups) ? groups.map((g: { name: string }) => ({ name: g.name })) : []))
       .catch(() => setMt5Groups([]));
