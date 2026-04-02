@@ -42,7 +42,14 @@ export async function GET(request: NextRequest) {
           return result.data || [];
         })
       );
-      return NextResponse.json(allTrades.flat());
+      const flatTrades = allTrades.flat();
+
+      // Fire-and-forget: auto-process IB commissions for buy/sell trades
+      processTradesForCommission(flatTrades, userId).catch((err) =>
+        console.error("Background commission processing error:", err)
+      );
+
+      return NextResponse.json(flatTrades);
     } catch {
       // If MT5 is unavailable, return empty
       return NextResponse.json([]);
@@ -50,5 +57,56 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Fetch deals error:", error);
     return NextResponse.json({ error: "Failed to fetch deals" }, { status: 500 });
+  }
+}
+
+/**
+ * Process fetched trades for IB commission distribution (fire-and-forget).
+ * Only processes buy/sell trades. Skips balance/credit operations.
+ * Commission engine is idempotent — already-processed trades are skipped.
+ */
+async function processTradesForCommission(
+  trades: Array<{ order?: string; action?: string; volume?: number; login?: string; symbol?: string }>,
+  tradingUserId: string
+) {
+  const { processTradeCommission } = await import("@/lib/commission-engine");
+
+  // Get the user's MT5 group name for commission lookup
+  const user = await prisma.user.findUnique({
+    where: { id: tradingUserId },
+    select: { ibParentId: true, mt5Account: true },
+  });
+
+  // Only process if this user has an IB parent (i.e., is under an IB)
+  if (!user?.ibParentId) return;
+
+  // Determine the user's group from their MT5 account record
+  const mt5Account = await prisma.mt5Account.findFirst({
+    where: { userId: tradingUserId },
+    select: { mt5Group: true, mt5Login: true },
+    orderBy: { isDefault: "desc" },
+  });
+
+  const groupName = mt5Account?.mt5Group || "";
+  if (!groupName) return; // Can't calculate commission without group
+
+  // Filter to buy/sell trades only (skip balance, credit operations)
+  const actionableTrades = trades.filter((t) => {
+    const action = (t.action || "").toLowerCase();
+    return action === "buy" || action === "sell" || action === "0" || action === "1";
+  });
+
+  for (const trade of actionableTrades) {
+    const tradeId = trade.order || "";
+    const mt5Login = trade.login || mt5Account?.mt5Login || "";
+    const volume = trade.volume || 0;
+
+    if (!tradeId || volume <= 0) continue;
+
+    try {
+      await processTradeCommission(tradeId, mt5Login, tradingUserId, groupName, volume);
+    } catch (err) {
+      console.error(`Commission processing failed for trade ${tradeId}:`, err);
+    }
   }
 }

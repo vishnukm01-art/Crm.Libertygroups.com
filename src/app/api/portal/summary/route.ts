@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { mt5GetAccount } from "@/lib/mt5";
+import { mt5GetAccount, mt5GetTrades } from "@/lib/mt5";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,12 @@ export async function GET(request: NextRequest) {
       where: { userId },
       orderBy: { createdAt: "asc" },
     });
+
+    // Also include legacy mt5Account if not in mt5Accounts table
+    const allLogins = mt5Accounts.map((a) => a.mt5Login);
+    if (user.mt5Account && !allLogins.includes(user.mt5Account)) {
+      allLogins.push(user.mt5Account);
+    }
 
     let totalBalance = 0;
     const enrichedAccounts = await Promise.all(
@@ -73,19 +79,46 @@ export async function GET(request: NextRequest) {
       select: { type: true, status: true },
     });
 
-    const totalDeposits = deposits.reduce((s, t) => s + t.amount, 0);
+    const crmDeposits = deposits.reduce((s, t) => s + t.amount, 0);
     const totalWithdrawals = withdrawals.reduce((s, t) => s + t.amount, 0);
     const depositCount = deposits.length;
     const withdrawalCount = withdrawals.length;
     const pendingCount = allTx.filter((t) => t.status === "pending").length;
+
+    // Fetch MT5-sourced deposits from deal history (balance operations with positive profit)
+    let mt5Deposits = 0;
+    let mt5Withdrawals = 0;
+    try {
+      const allDeals = await Promise.all(
+        allLogins.map(async (login) => {
+          const result = await mt5GetTrades(login, from || undefined, to || undefined);
+          return result.data || [];
+        })
+      );
+      for (const deal of allDeals.flat()) {
+        const action = (deal.action || "").toLowerCase();
+        if (action === "balance" || action === "2") {
+          const amount = deal.profit || 0;
+          if (amount > 0) mt5Deposits += amount;
+          else if (amount < 0) mt5Withdrawals += Math.abs(amount);
+        }
+      }
+    } catch {
+      // MT5 unavailable — just use CRM data
+    }
+
+    // Combined totals: CRM deposits + MT5 Admin balance deposits
+    const totalDeposits = crmDeposits + mt5Deposits;
 
     return NextResponse.json({
       walletBalance: totalBalance,
       totalBalance,
       mt5Accounts: enrichedAccounts,
       totalDeposits,
-      totalWithdrawals,
-      netDeposit: totalDeposits - totalWithdrawals,
+      crmDeposits,
+      mt5Deposits,
+      totalWithdrawals: totalWithdrawals + mt5Withdrawals,
+      netDeposit: totalDeposits - (totalWithdrawals + mt5Withdrawals),
       depositCount,
       withdrawalCount,
       pendingCount,

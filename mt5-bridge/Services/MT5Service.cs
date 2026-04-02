@@ -486,31 +486,259 @@ public class MT5Service : IMT5Service, IDisposable
     {
         return await CallApi<List<TradeRecord>>("GetHistory", async () =>
         {
-            // For now, return empty list if the method signature doesn't match
-            // The exact API depends on the SDK version
             var trades = new List<TradeRecord>();
+            var diag = new List<string>();
 
             try
             {
                 var fromTime = from ?? DateTimeOffset.UtcNow.AddDays(-30).ToUnixTimeSeconds();
                 var toTime = to ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-                // Try to call HistoryGet or DealGet
-                // Signature varies: HistoryGet(login, from, to, out deals)
-                var historyMethod = FindApiMethod("HistoryGet", "DealGet", "DealRequest");
-                if (historyMethod != null)
+                // Strategy 1: DealCreateArray + DealRequest (standard MT5 Manager API pattern)
+                var createArrayMethod = FindApiMethod("DealCreateArray");
+                if (createArrayMethod != null)
                 {
-                    _logger.LogInformation("Found history method: {Name} with {Count} params",
-                        historyMethod.Name, historyMethod.GetParameters().Length);
-                    // Implementation depends on actual SDK method signature
+                    var dealArray = createArrayMethod.Invoke(_managerApi, null);
+                    if (dealArray != null)
+                    {
+                        diag.Add($"DealCreateArray -> {dealArray.GetType().Name}");
+
+                        // Look for DealRequest or DealGet that fills the array
+                        // Typical signatures:
+                        //   DealRequest(ulong login, ulong from, ulong to, IMTDealArray deals) -> MTRetCode
+                        //   DealGet(IMTDealArray deals, ulong login, ulong from, ulong to) -> MTRetCode
+                        var requestMethod = FindApiMethod("DealRequest");
+                        var dealGetMethod = FindApiMethod("DealGet");
+                        var historyGetMethod = FindApiMethod("HistoryGet");
+
+                        object? reqResult = null;
+                        bool requestSucceeded = false;
+
+                        // Try DealRequest(login, from, to, array)
+                        if (requestMethod != null)
+                        {
+                            var reqParams = requestMethod.GetParameters();
+                            diag.Add($"DealRequest params: ({string.Join(",", reqParams.Select(p => $"{p.ParameterType.Name} {p.Name}"))})");
+
+                            try
+                            {
+                                if (reqParams.Length == 4)
+                                {
+                                    // Could be (login, from, to, array) or (array, login, from, to)
+                                    var firstParamType = reqParams[0].ParameterType;
+                                    if (firstParamType == typeof(ulong) || firstParamType == typeof(long) || firstParamType == typeof(UInt64))
+                                    {
+                                        reqResult = requestMethod.Invoke(_managerApi, new object[] { (ulong)login, (ulong)fromTime, (ulong)toTime, dealArray });
+                                    }
+                                    else
+                                    {
+                                        reqResult = requestMethod.Invoke(_managerApi, new object[] { dealArray, (ulong)login, (ulong)fromTime, (ulong)toTime });
+                                    }
+                                }
+                                else if (reqParams.Length == 3)
+                                {
+                                    // Possibly (login, from, to) with array as separate call
+                                    reqResult = requestMethod.Invoke(_managerApi, new object[] { (ulong)login, (ulong)fromTime, (ulong)toTime });
+                                }
+
+                                diag.Add($"DealRequest result: {reqResult}");
+                                requestSucceeded = IsRetCodeSuccess(reqResult);
+                            }
+                            catch (Exception ex)
+                            {
+                                diag.Add($"DealRequest error: {ex.InnerException?.Message ?? ex.Message}");
+                            }
+                        }
+
+                        // Try DealGet if DealRequest didn't work
+                        if (!requestSucceeded && dealGetMethod != null)
+                        {
+                            var getParams = dealGetMethod.GetParameters();
+                            diag.Add($"DealGet params: ({string.Join(",", getParams.Select(p => $"{p.ParameterType.Name} {p.Name}"))})");
+
+                            try
+                            {
+                                if (getParams.Length >= 4)
+                                {
+                                    var args = new object[] { (ulong)login, (ulong)fromTime, (ulong)toTime, dealArray };
+                                    reqResult = dealGetMethod.Invoke(_managerApi, args);
+                                }
+                                else if (getParams.Length == 2)
+                                {
+                                    // DealGet(login, array) — time range might be set separately
+                                    reqResult = dealGetMethod.Invoke(_managerApi, new object[] { (ulong)login, dealArray });
+                                }
+
+                                diag.Add($"DealGet result: {reqResult}");
+                                requestSucceeded = IsRetCodeSuccess(reqResult);
+                            }
+                            catch (Exception ex)
+                            {
+                                diag.Add($"DealGet error: {ex.InnerException?.Message ?? ex.Message}");
+                            }
+                        }
+
+                        // Try HistoryGet if others didn't work
+                        if (!requestSucceeded && historyGetMethod != null)
+                        {
+                            var histParams = historyGetMethod.GetParameters();
+                            diag.Add($"HistoryGet params: ({string.Join(",", histParams.Select(p => $"{p.ParameterType.Name} {p.Name}"))})");
+
+                            try
+                            {
+                                if (histParams.Length >= 3)
+                                {
+                                    var args = new object?[histParams.Length];
+                                    args[0] = (ulong)login;
+                                    args[1] = (ulong)fromTime;
+                                    args[2] = (ulong)toTime;
+                                    if (histParams.Length >= 4) args[3] = dealArray;
+
+                                    reqResult = historyGetMethod.Invoke(_managerApi, args);
+                                    diag.Add($"HistoryGet result: {reqResult}");
+                                    requestSucceeded = IsRetCodeSuccess(reqResult);
+
+                                    // Check if result came back in out params
+                                    if (requestSucceeded && histParams.Length >= 4 && args[3] != null)
+                                        dealArray = args[3];
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                diag.Add($"HistoryGet error: {ex.InnerException?.Message ?? ex.Message}");
+                            }
+                        }
+
+                        // Extract deals from array
+                        if (requestSucceeded && dealArray != null)
+                        {
+                            var totalMethod = dealArray.GetType().GetMethod("Total");
+                            var nextMethod = dealArray.GetType().GetMethod("Next");
+
+                            if (totalMethod != null && nextMethod != null)
+                            {
+                                var total = Convert.ToUInt32(totalMethod.Invoke(dealArray, null) ?? 0u);
+                                diag.Add($"Deal array total: {total}");
+
+                                for (uint i = 0; i < total; i++)
+                                {
+                                    try
+                                    {
+                                        var dealObj = nextMethod.Invoke(dealArray, new object[] { i });
+                                        if (dealObj == null) continue;
+
+                                        var trade = ExtractDealInfo(dealObj, login);
+                                        if (trade != null)
+                                            trades.Add(trade);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        diag.Add($"Deal[{i}] extract error: {ex.InnerException?.Message ?? ex.Message}");
+                                    }
+                                }
+
+                                if (trades.Count > 0)
+                                {
+                                    _logger.LogInformation("GetHistory: Retrieved {Count} deals for login {Login}", trades.Count, login);
+                                    return BridgeResult<List<TradeRecord>>.Ok(trades, string.Join(" | ", diag));
+                                }
+                            }
+                            else
+                            {
+                                diag.Add($"Array missing Total/Next. Methods: {string.Join(", ", dealArray.GetType().GetMethods().Select(m => m.Name).Distinct().Take(20))}");
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    diag.Add("DealCreateArray not found");
+                }
+
+                // Strategy 2: Direct method call returning array/list
+                // Some SDK versions: HistoryGetDeals(login, from, to) returns deals directly
+                var directMethods = new[] { "HistoryGetDeals", "HistoryDealsGet", "DealGetAll", "DealsGet" };
+                foreach (var methodName in directMethods)
+                {
+                    var method = FindApiMethod(methodName);
+                    if (method == null) continue;
+
+                    var mParams = method.GetParameters();
+                    diag.Add($"Trying {method.Name}({string.Join(",", mParams.Select(p => $"{p.ParameterType.Name}"))})");
+
+                    try
+                    {
+                        object? result;
+                        var args = new object?[mParams.Length];
+                        if (mParams.Length >= 3)
+                        {
+                            args[0] = (ulong)login;
+                            args[1] = (ulong)fromTime;
+                            args[2] = (ulong)toTime;
+                        }
+                        else if (mParams.Length >= 1)
+                        {
+                            args[0] = (ulong)login;
+                        }
+
+                        result = method.Invoke(_managerApi, args);
+
+                        // Check if result is the array itself or if success code with out params
+                        if (result != null && result is System.Collections.IEnumerable enumResult && !(result is string))
+                        {
+                            foreach (var dealObj in enumResult)
+                            {
+                                var trade = ExtractDealInfo(dealObj, login);
+                                if (trade != null) trades.Add(trade);
+                            }
+                        }
+                        else if (IsRetCodeSuccess(result))
+                        {
+                            // Deals may be in an out param
+                            for (int a = 0; a < args.Length; a++)
+                            {
+                                if (args[a] == null) continue;
+                                if (args[a] is System.Collections.IEnumerable argEnum && !(args[a] is string))
+                                {
+                                    foreach (var dealObj in argEnum)
+                                    {
+                                        var trade = ExtractDealInfo(dealObj, login);
+                                        if (trade != null) trades.Add(trade);
+                                    }
+                                }
+                            }
+                        }
+
+                        if (trades.Count > 0)
+                        {
+                            _logger.LogInformation("GetHistory via {Method}: {Count} deals", method.Name, trades.Count);
+                            return BridgeResult<List<TradeRecord>>.Ok(trades, string.Join(" | ", diag));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        diag.Add($"{method.Name} error: {ex.InnerException?.Message ?? ex.Message}");
+                    }
+                }
+
+                // Log available deal/history methods for diagnostics
+                if (_managerApi != null)
+                {
+                    var dealMethods = _managerApi.GetType().GetMethods()
+                        .Where(m => m.Name.Contains("Deal", StringComparison.OrdinalIgnoreCase)
+                                 || m.Name.Contains("History", StringComparison.OrdinalIgnoreCase))
+                        .Select(m => $"{m.Name}({string.Join(", ", m.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"))})");
+                    diag.Add($"Available deal/history methods: {string.Join("; ", dealMethods)}");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error getting trade history");
+                diag.Add($"Exception: {ex.InnerException?.Message ?? ex.Message}");
+                _logger.LogWarning(ex, "Error getting trade history for login {Login}", login);
             }
 
-            return BridgeResult<List<TradeRecord>>.Ok(trades);
+            _logger.LogWarning("GetHistory: All strategies failed for login {Login}. Diag: {Diag}", login, string.Join(" | ", diag));
+            return BridgeResult<List<TradeRecord>>.Ok(trades, string.Join(" | ", diag));
         });
     }
 
@@ -926,6 +1154,100 @@ public class MT5Service : IMT5Service, IDisposable
     }
 
     // ─── Helper Methods ──────────────────────────────────────
+
+    private TradeRecord? ExtractDealInfo(object? dealObj, long fallbackLogin)
+    {
+        if (dealObj == null) return null;
+
+        try
+        {
+            // MT5 IMTDeal exposes data via methods:
+            //   Deal() -> ulong (ticket), Login() -> ulong, Symbol() -> string
+            //   Action() -> uint (0=buy,1=sell,2=balance), Volume() -> ulong (hundredths of lot)
+            //   Price() -> double, Profit() -> double, Commission() -> double
+            //   Time() -> long (unix timestamp), TimeMsc() -> long (ms timestamp)
+
+            var order = GetProperty<ulong>(dealObj, "Deal");
+            var orderStr = order?.ToString() ?? GetProperty<string>(dealObj, "Order") ?? "";
+
+            var loginVal = GetProperty<ulong>(dealObj, "Login");
+            var loginStr = loginVal?.ToString() ?? fallbackLogin.ToString();
+
+            var symbol = GetProperty<string>(dealObj, "Symbol") ?? "";
+
+            // Action: 0=buy, 1=sell, 2=balance, 3=credit, etc.
+            var actionVal = GetProperty<uint>(dealObj, "Action") ?? 0u;
+            string actionStr;
+            switch (actionVal)
+            {
+                case 0: actionStr = "Buy"; break;
+                case 1: actionStr = "Sell"; break;
+                case 2: actionStr = "Balance"; break;
+                case 3: actionStr = "Credit"; break;
+                default: actionStr = actionVal.ToString(); break;
+            }
+
+            // Volume: MT5 stores volume in hundredths of a lot (e.g., 100 = 0.01 lot)
+            // VolumeExt stores in ten-thousandths. Try VolumeExt first for precision.
+            var volumeExt = GetProperty<ulong>(dealObj, "VolumeExt");
+            var volumeRaw = GetProperty<ulong>(dealObj, "Volume");
+            double volume;
+            if (volumeExt.HasValue && volumeExt.Value > 0)
+                volume = volumeExt.Value / 10000.0;
+            else if (volumeRaw.HasValue && volumeRaw.Value > 0)
+                volume = volumeRaw.Value / 100.0;
+            else
+                volume = 0;
+
+            // If volume came through as already a double via a property, use it directly
+            if (volume == 0)
+            {
+                var volumeDouble = GetProperty<double>(dealObj, "Volume");
+                if (volumeDouble.HasValue && volumeDouble.Value > 0)
+                    volume = volumeDouble.Value;
+            }
+
+            var price = GetProperty<double>(dealObj, "Price") ?? 0.0;
+            var profit = GetProperty<double>(dealObj, "Profit") ?? 0.0;
+            var commission = GetProperty<double>(dealObj, "Commission") ?? 0.0;
+
+            // Time: prefer TimeMsc (milliseconds), fall back to Time (seconds)
+            var timeMsc = GetProperty<long>(dealObj, "TimeMsc");
+            var timeVal = GetProperty<long>(dealObj, "Time");
+            string timeStr = "";
+            if (timeMsc.HasValue && timeMsc.Value > 0)
+            {
+                timeStr = DateTimeOffset.FromUnixTimeMilliseconds(timeMsc.Value).ToString("yyyy-MM-dd HH:mm:ss");
+            }
+            else if (timeVal.HasValue && timeVal.Value > 0)
+            {
+                timeStr = DateTimeOffset.FromUnixTimeSeconds(timeVal.Value).ToString("yyyy-MM-dd HH:mm:ss");
+            }
+
+            var positionId = GetProperty<ulong>(dealObj, "PositionID") ?? 0UL;
+
+            return new TradeRecord
+            {
+                Order = !string.IsNullOrEmpty(orderStr) ? orderStr : positionId.ToString(),
+                Login = loginStr,
+                Symbol = symbol,
+                Action = actionStr,
+                Volume = volume,
+                OpenPrice = price,
+                ClosePrice = price,
+                Profit = profit,
+                Commission = commission,
+                OpenTime = timeStr,
+                CloseTime = timeStr,
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ExtractDealInfo failed for {Type}", dealObj?.GetType().Name);
+        }
+
+        return null;
+    }
 
     private GroupInfo? ExtractGroupInfo(object? groupObj)
     {

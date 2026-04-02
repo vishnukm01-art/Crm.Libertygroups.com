@@ -40,7 +40,7 @@ export interface MT5TradeRecord {
   order: string;
   login: string;
   symbol: string;
-  action: "buy" | "sell";
+  action: string;
   volume: number;
   openPrice: number;
   closePrice: number;
@@ -450,8 +450,18 @@ export async function mt5GetTrades(login: string, from?: string, to?: string): P
     return { success: true, data: generateMockTrades(login, 25) };
   }
   const params = new URLSearchParams({ login });
-  if (from) params.set("from", from);
-  if (to) params.set("to", to);
+  // Bridge expects Unix timestamps (long), not ISO date strings
+  if (from) {
+    const ts = Math.floor(new Date(from).getTime() / 1000);
+    if (!isNaN(ts)) params.set("from", ts.toString());
+  }
+  if (to) {
+    // Set to end of day so the full date range is included
+    const toDate = new Date(to);
+    toDate.setHours(23, 59, 59);
+    const ts = Math.floor(toDate.getTime() / 1000);
+    if (!isNaN(ts)) params.set("to", ts.toString());
+  }
   const result = await bridgeRequest<MT5TradeRecord[]>(`/api/history/get?${params.toString()}`);
   // Normalize PascalCase bridge response to camelCase
   if (result.success && result.data) {
