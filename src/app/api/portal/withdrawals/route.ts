@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     type WithdrawalRow = (typeof withdrawals)[number];
     let mt5Withdrawals: WithdrawalRow[] = [];
     try {
+      const loginSet = new Set(allLogins);
       const allDeals = await Promise.all(
         allLogins.map(async (login) => {
           const result = await mt5GetTrades(login, from || undefined, to || undefined);
@@ -55,6 +56,8 @@ export async function GET(request: NextRequest) {
         })
       );
       for (const deal of allDeals.flat()) {
+        // Only include deals that belong to this user's MT5 accounts
+        if (deal.login && !loginSet.has(deal.login)) continue;
         const action = (deal.action || "").toLowerCase();
         if ((action === "balance" || action === "2") && (deal.profit || 0) < 0) {
           mt5Withdrawals.push({

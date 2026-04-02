@@ -718,13 +718,6 @@ public class MT5Service : IMT5Service, IDisposable
 
                                 diag.Add($"Extraction: null={nullCount}, extracted={allExtracted.Count}, loginMatch={trades.Count}, sampleLogins=[{string.Join(",", sampleLogins)}]");
 
-                                // If login filter produced 0 but we have extracted deals, return all
-                                if (trades.Count == 0 && allExtracted.Count > 0)
-                                {
-                                    _logger.LogInformation("GetHistory: Login filter matched 0/{Count} deals. Returning all.", allExtracted.Count);
-                                    trades = allExtracted;
-                                }
-
                                 if (trades.Count > 0)
                                 {
                                     _logger.LogInformation("GetHistory: Retrieved {Count} deals for login {Login}", trades.Count, login);

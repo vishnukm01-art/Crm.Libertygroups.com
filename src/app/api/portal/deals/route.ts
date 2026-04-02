@@ -36,13 +36,17 @@ export async function GET(request: NextRequest) {
     // Fetch trades for all MT5 accounts in parallel
     try {
       const { mt5GetTrades } = await import("@/lib/mt5");
+      const loginSet = new Set(mt5Accounts.map((a) => a.mt5Login));
       const allTrades = await Promise.all(
         mt5Accounts.map(async (acc) => {
           const result = await mt5GetTrades(acc.mt5Login, from || undefined, to || undefined);
           return result.data || [];
         })
       );
-      const flatTrades = allTrades.flat();
+      // Only include deals that belong to this user's MT5 accounts
+      const flatTrades = allTrades.flat().filter(
+        (t) => !t.login || loginSet.has(t.login)
+      );
 
       // Fire-and-forget: auto-process IB commissions for buy/sell trades
       processTradesForCommission(flatTrades, userId).catch((err) =>
