@@ -528,17 +528,31 @@ public class MT5Service : IMT5Service, IDisposable
                                     var firstParamType = reqParams[0].ParameterType;
                                     if (firstParamType == typeof(ulong) || firstParamType == typeof(long) || firstParamType == typeof(UInt64))
                                     {
-                                        reqResult = requestMethod.Invoke(_managerApi, new object[] { (ulong)login, (ulong)fromTime, (ulong)toTime, dealArray });
+                                        // DealRequest(login, from, to, array) — cast each param to its declared type
+                                        reqResult = requestMethod.Invoke(_managerApi, new object[] {
+                                            CastToParamType(reqParams[0].ParameterType, login),
+                                            CastToParamType(reqParams[1].ParameterType, fromTime),
+                                            CastToParamType(reqParams[2].ParameterType, toTime),
+                                            dealArray
+                                        });
                                     }
                                     else
                                     {
-                                        reqResult = requestMethod.Invoke(_managerApi, new object[] { dealArray, (ulong)login, (ulong)fromTime, (ulong)toTime });
+                                        reqResult = requestMethod.Invoke(_managerApi, new object[] {
+                                            dealArray,
+                                            CastToParamType(reqParams[1].ParameterType, login),
+                                            CastToParamType(reqParams[2].ParameterType, fromTime),
+                                            CastToParamType(reqParams[3].ParameterType, toTime)
+                                        });
                                     }
                                 }
                                 else if (reqParams.Length == 3)
                                 {
-                                    // Possibly (login, from, to) with array as separate call
-                                    reqResult = requestMethod.Invoke(_managerApi, new object[] { (ulong)login, (ulong)fromTime, (ulong)toTime });
+                                    reqResult = requestMethod.Invoke(_managerApi, new object[] {
+                                        CastToParamType(reqParams[0].ParameterType, login),
+                                        CastToParamType(reqParams[1].ParameterType, fromTime),
+                                        CastToParamType(reqParams[2].ParameterType, toTime)
+                                    });
                                 }
 
                                 diag.Add($"DealRequest result: {reqResult}");
@@ -560,13 +574,17 @@ public class MT5Service : IMT5Service, IDisposable
                             {
                                 if (getParams.Length >= 4)
                                 {
-                                    var args = new object[] { (ulong)login, (ulong)fromTime, (ulong)toTime, dealArray };
+                                    var args = new object[] {
+                                        CastToParamType(getParams[0].ParameterType, login),
+                                        CastToParamType(getParams[1].ParameterType, fromTime),
+                                        CastToParamType(getParams[2].ParameterType, toTime),
+                                        dealArray!
+                                    };
                                     reqResult = dealGetMethod.Invoke(_managerApi, args);
                                 }
                                 else if (getParams.Length == 2)
                                 {
-                                    // DealGet(login, array) — time range might be set separately
-                                    reqResult = dealGetMethod.Invoke(_managerApi, new object[] { (ulong)login, dealArray });
+                                    reqResult = dealGetMethod.Invoke(_managerApi, new object[] { CastToParamType(getParams[0].ParameterType, login), dealArray! });
                                 }
 
                                 diag.Add($"DealGet result: {reqResult}");
@@ -589,16 +607,15 @@ public class MT5Service : IMT5Service, IDisposable
                                 if (histParams.Length >= 3)
                                 {
                                     var args = new object?[histParams.Length];
-                                    args[0] = (ulong)login;
-                                    args[1] = (ulong)fromTime;
-                                    args[2] = (ulong)toTime;
+                                    args[0] = CastToParamType(histParams[0].ParameterType, login);
+                                    args[1] = CastToParamType(histParams[1].ParameterType, fromTime);
+                                    args[2] = CastToParamType(histParams[2].ParameterType, toTime);
                                     if (histParams.Length >= 4) args[3] = dealArray;
 
                                     reqResult = historyGetMethod.Invoke(_managerApi, args);
                                     diag.Add($"HistoryGet result: {reqResult}");
                                     requestSucceeded = IsRetCodeSuccess(reqResult);
 
-                                    // Check if result came back in out params
                                     if (requestSucceeded && histParams.Length >= 4 && args[3] != null)
                                         dealArray = args[3];
                                 }
@@ -672,13 +689,13 @@ public class MT5Service : IMT5Service, IDisposable
                         var args = new object?[mParams.Length];
                         if (mParams.Length >= 3)
                         {
-                            args[0] = (ulong)login;
-                            args[1] = (ulong)fromTime;
-                            args[2] = (ulong)toTime;
+                            args[0] = CastToParamType(mParams[0].ParameterType, login);
+                            args[1] = CastToParamType(mParams[1].ParameterType, fromTime);
+                            args[2] = CastToParamType(mParams[2].ParameterType, toTime);
                         }
                         else if (mParams.Length >= 1)
                         {
-                            args[0] = (ulong)login;
+                            args[0] = CastToParamType(mParams[0].ParameterType, login);
                         }
 
                         result = method.Invoke(_managerApi, args);
@@ -1154,6 +1171,19 @@ public class MT5Service : IMT5Service, IDisposable
     }
 
     // ─── Helper Methods ──────────────────────────────────────
+
+    /// <summary>
+    /// Cast a long value to the target parameter type for reflection invocation.
+    /// MT5 API methods use a mix of UInt64 (for logins) and Int64 (for timestamps).
+    /// </summary>
+    private static object CastToParamType(Type targetType, long value)
+    {
+        if (targetType == typeof(long) || targetType == typeof(Int64)) return value;
+        if (targetType == typeof(ulong) || targetType == typeof(UInt64)) return (ulong)value;
+        if (targetType == typeof(int) || targetType == typeof(Int32)) return (int)value;
+        if (targetType == typeof(uint) || targetType == typeof(UInt32)) return (uint)value;
+        return Convert.ChangeType(value, targetType);
+    }
 
     private TradeRecord? ExtractDealInfo(object? dealObj, long fallbackLogin)
     {
