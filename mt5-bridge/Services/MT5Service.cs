@@ -564,6 +564,59 @@ public class MT5Service : IMT5Service, IDisposable
                             }
                         }
 
+                        // Fallback 1: DealRequestByLogins(UInt64[] logins, Int64 from, Int64 to, CIMTDealArray deals)
+                        if (!requestSucceeded)
+                        {
+                            var byLoginsMethod = FindApiMethod("DealRequestByLogins");
+                            if (byLoginsMethod != null)
+                            {
+                                var blParams = byLoginsMethod.GetParameters();
+                                diag.Add($"DealRequestByLogins params: ({string.Join(",", blParams.Select(p => $"{p.ParameterType.Name} {p.Name}"))})");
+                                try
+                                {
+                                    var loginsArray = new ulong[] { (ulong)login };
+                                    reqResult = byLoginsMethod.Invoke(_managerApi, new object[] {
+                                        loginsArray,
+                                        CastToParamType(blParams[1].ParameterType, fromTime),
+                                        CastToParamType(blParams[2].ParameterType, toTime),
+                                        dealArray!
+                                    });
+                                    diag.Add($"DealRequestByLogins result: {reqResult}");
+                                    requestSucceeded = IsRetCodeSuccess(reqResult);
+                                }
+                                catch (Exception ex)
+                                {
+                                    diag.Add($"DealRequestByLogins error: {ex.InnerException?.Message ?? ex.Message}");
+                                }
+                            }
+                        }
+
+                        // Fallback 2: DealRequestByGroup(String mask, Int64 from, Int64 to, CIMTDealArray deals)
+                        if (!requestSucceeded)
+                        {
+                            var byGroupMethod = FindApiMethod("DealRequestByGroup");
+                            if (byGroupMethod != null)
+                            {
+                                var bgParams = byGroupMethod.GetParameters();
+                                diag.Add($"DealRequestByGroup params: ({string.Join(",", bgParams.Select(p => $"{p.ParameterType.Name} {p.Name}"))})");
+                                try
+                                {
+                                    reqResult = byGroupMethod.Invoke(_managerApi, new object[] {
+                                        "*",
+                                        CastToParamType(bgParams[1].ParameterType, fromTime),
+                                        CastToParamType(bgParams[2].ParameterType, toTime),
+                                        dealArray!
+                                    });
+                                    diag.Add($"DealRequestByGroup result: {reqResult}");
+                                    requestSucceeded = IsRetCodeSuccess(reqResult);
+                                }
+                                catch (Exception ex)
+                                {
+                                    diag.Add($"DealRequestByGroup error: {ex.InnerException?.Message ?? ex.Message}");
+                                }
+                            }
+                        }
+
                         // Try DealGet if DealRequest didn't work
                         if (!requestSucceeded && dealGetMethod != null)
                         {
@@ -645,7 +698,9 @@ public class MT5Service : IMT5Service, IDisposable
                                         if (dealObj == null) continue;
 
                                         var trade = ExtractDealInfo(dealObj, login);
-                                        if (trade != null)
+                                        if (trade == null) continue;
+                                        // Filter by login (DealRequestByGroup returns all logins)
+                                        if (trade.Login == login.ToString() || login == 0)
                                             trades.Add(trade);
                                     }
                                     catch (Exception ex)
