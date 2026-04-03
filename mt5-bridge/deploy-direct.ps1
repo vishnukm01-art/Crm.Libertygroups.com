@@ -1619,13 +1619,13 @@ public class MT5Service : IMT5Service, IDisposable
             var volumeExt = GetProperty<ulong>(dealObj, "VolumeExt");
             var volumeRaw = GetProperty<ulong>(dealObj, "Volume");
             double volume;
-            // Volume()    -> ulong, lots × 10^2  (e.g., 100 = 1.00 lot)
+            // Volume()    -> ulong, lots × 10^4  (e.g., 10000 = 1.00 lot)
             // VolumeExt() -> ulong, lots × 10^8  (e.g., 100000000 = 1.00 lot)
-            // Prefer Volume (well-documented) over VolumeExt.
-            double fromVolume = volumeRaw > 0 ? volumeRaw / 100.0 : 0;
+            // Prefer VolumeExt (higher precision), fall back to Volume.
             double fromVolumeExt = volumeExt > 0 ? volumeExt / 100_000_000.0 : 0;
-            if (fromVolume > 0) volume = fromVolume;
-            else if (fromVolumeExt > 0) volume = fromVolumeExt;
+            double fromVolume = volumeRaw > 0 ? volumeRaw / 10_000.0 : 0;
+            if (fromVolumeExt > 0) volume = fromVolumeExt;
+            else if (fromVolume > 0) volume = fromVolume;
             else volume = 0;
             if (volume == 0)
             {
